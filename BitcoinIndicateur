@@ -1,0 +1,786 @@
+// ©PierreWacquez
+//@version=5
+//Code protected, copy and sales is not allowed
+indicator("Gagner de l'argent en bourse sur bitcoin avec PierreWacquez ", overlay = true, max_bars_back=1000, max_lines_count=400, max_labels_count=400)
+//------------------------------------------------------------------------------
+// lIBRAIRIES
+//------------------------------------------------------------------------------
+//#region ———————————————————— Library functions
+import TradingView/ta/7
+import TradingView/TechnicalRating/1 as rating
+
+// ========================================
+//          Couleurs etiquettes
+// ========================================
+
+
+res = input.timeframe("", title="Indicator Timeframe")
+
+// ========================================
+//          1 - Analyse du volume
+// ========================================
+
+SignalLongShortVolume() =>
+    shortlenvol = input.int(5, minval=1, title = "Short Length")
+    longlenvol = input.int(10, minval=1, title = "Long Length")
+    short = ta.ema(volume, shortlenvol)
+    long = ta.ema(volume, longlenvol)
+    Signal = short < long ? -1 : short > long ? +1 : na
+
+    Signal
+
+// ========================================
+//          2 - Analyse des correlation
+// ========================================
+calculateCorrelation(symbol, length) =>
+    adjustedSeries  = ticker.modify(symbol)
+    requestedData   = request.security(adjustedSeries, timeframe.period, close)
+    correlation     = ta.correlation(close, requestedData, length)
+    correlation
+
+// Entrées utilisateur
+symbolInput1    = input.symbol("TVC:RUT", "Symbol 1", confirm = true, group = "████████ Correlation for MarketSentiment ████████")
+symbolInput2    = input.symbol("CME_MINI:NQ1!", "Symbol 2", confirm = true, group =  "████████ Correlation for MarketSentiment ████████")
+symbolInput3    = input.symbol("SP:SPX", "Symbol 3", confirm = true, group = "████████ Correlation for MarketSentiment ████████")
+symbolInput4    = input.symbol("TVC:GOLD", "Symbol 4", confirm = true, group =  "████████ Correlation for MarketSentiment ████████")
+symbolInput5    = input.symbol("TVC:DXY", "Symbol 5", confirm = true, group =  "████████ Correlation for MarketSentiment ████████")
+symbolInput6    = input.symbol("NYSE:MSCI", "Symbol 6", confirm = true, group =  "████████ Correlation for MarketSentiment ████████")
+
+lengthInput     = input.int(20, "Length", group =  "████████ Correlation for MarketSentiment ████████")
+
+// Calcul de la corrélation pour le premier symbole
+CorrelationSmallCap     = calculateCorrelation(symbolInput1, lengthInput)
+CorrelationNasdaq       = calculateCorrelation(symbolInput2, lengthInput)
+CorrelationSPX          = calculateCorrelation(symbolInput3, lengthInput)
+CorrelationMetaux       = calculateCorrelation(symbolInput4, lengthInput)
+CorrelationMonetaire    = calculateCorrelation(symbolInput5, lengthInput)
+
+PositivCorrelationSmallCap1 =  CorrelationSmallCap > 0 ? true : false
+PositivCorrelationNasdaq    =  CorrelationNasdaq > 0 ? true : false
+PositivCorrelationSPX       =  CorrelationSPX > 0 ? true : false
+PositivCorrelationMetaux    =  CorrelationMetaux > 0 ? true : false
+PositivCorrelationMonetaire =  CorrelationMonetaire > 0 ? true : false
+
+SentimentArray = array.new<float>(5)
+
+[ratingTotalCurrentCo1, ratingOtherCurrentCo1, ratingMACurrentCo1]  = request.security(symbolInput1, "15", rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotalCurrentCo2, ratingOtherCurrentCo2, ratingMACurrentCo2]  = request.security(symbolInput2, "15", rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotalCurrentCo3, ratingOtherCurrentCo3, ratingMACurrentCo3]  = request.security(symbolInput3, "15", rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotalCurrentCo4, ratingOtherCurrentCo4, ratingMACurrentCo4]  = request.security(symbolInput4, "15", rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotalCurrentCo5, ratingOtherCurrentCo5, ratingMACurrentCo5]  = request.security(symbolInput5, "15", rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+
+if PositivCorrelationSmallCap1
+    array.insert(SentimentArray, 0, ratingTotalCurrentCo1) 
+if PositivCorrelationNasdaq
+    array.insert(SentimentArray, 0, ratingTotalCurrentCo2) 
+if PositivCorrelationSPX
+    array.insert(SentimentArray, 0, ratingTotalCurrentCo3) 
+if PositivCorrelationMetaux
+    array.insert(SentimentArray, 0, ratingTotalCurrentCo4) 
+if PositivCorrelationMonetaire
+    array.insert(SentimentArray, 0, ratingTotalCurrentCo5) 
+
+// Calcul de la moyenne
+Sentiment =  array.median(SentimentArray)
+
+LongSentiment       = Sentiment > 0 ? "✓" : "☓"
+ShortSentiment      = Sentiment < 0 ? "✓" : "☓"
+
+// Réinitialisation de l'array après le calcul de la moyenne
+array.clear(SentimentArray)
+
+
+//#region ———————————————————— Volatilité implicite
+days            = input.int(defval=1, title="volatilité implicite temps, 1 24h, 2 48h, 3 72h..", tooltip = "La formule est une expression mathématique qui calculee la borne inférieure/supérieure a l'echelle du jour en fonction du prix actuel de l'actif sous-jacent, de la volatilité et du temps." , group=" ————————————————————3 - Volatilité" )
+underlying      = request.security(syminfo.tickerid, 'D', close[1])
+
+// ========================================
+//          Analyse du décomptage bougies (mini cycles)
+// ========================================
+
+var int TD = na
+var int TS = na
+var int TDUp = na
+var int TDDn = na
+
+TD := close > close[4] ? nz(TD[1])+1 : 0
+TS := close < close[4] ? nz(TS[1])+1 : 0
+TDUp := TD - ta.valuewhen(TD < TD[1], TD , 1 )
+TDDn := TS - ta.valuewhen(TS < TS[1], TS , 1 )
+
+plotshape(TDUp == 5 ? true : na, style=shape.triangledown, text="5", color=color.black, textcolor = color.black, location=location.abovebar)
+plotshape(TDUp == 6 ? true : na, style=shape.triangledown, text="6", color=color.black, textcolor = color.black, location=location.abovebar)
+plotshape(TDUp == 7 ?true : na, style=shape.triangledown, text="7", color=color.black,  textcolor = color.black,location=location.abovebar)
+plotshape(TDUp == 8 ? true : na, style=shape.triangledown, text="8", color=color.black, textcolor = color.black,location=location.abovebar)
+plotshape(TDUp == 9 ? true : na, style=shape.triangledown, text="9", color=color.black, textcolor = color.black,location=location.abovebar)
+
+TDvente = TDUp > 5 ? true : false
+
+plotshape(TDDn == 5 ? true : na, style=shape.triangleup, text="5", color=color.black, textcolor = color.black, location=location.belowbar)
+plotshape(TDDn == 6 ? true : na, style=shape.triangleup, text="6", color=color.black,  textcolor = color.black, location=location.belowbar)
+plotshape(TDDn == 7 ? true : na, style=shape.triangleup, text="7", color=color.black,  textcolor = color.black, location=location.belowbar)
+plotshape(TDDn == 8 ? true : na, style=shape.triangleup, text="8", color=color.black, textcolor = color.black,  location=location.belowbar)
+plotshape(TDDn == 9 ? true : na, style=shape.triangleup, text="9", color=color.black,  textcolor = color.black, location=location.belowbar)
+
+TDAchat = TDDn > 5 ? true : false
+
+// ========================================
+//          Identification des zones de pivots, supports, resistances à l'echelle du jour pour otpimiser les entrées dans la direction de la tendance de fond avec calcul volatilité implicite
+//          Nous obtiendrons ainsi des zones supports & resistances invisible à l'arbitrargiste.
+// ========================================
+
+
+choix = input.string(defval = "crypto", options = ['crypto', 'indice'], group = "Volatilité Implicite Bandes")
+Tickerstring = "VOLMEX:BVIV"
+
+if choix == "crypto"
+    Tickerstring := "VOLMEX:BVIV"
+else 
+    Tickerstring := "TVC:VIX"
+
+BandClose           = request.security(Tickerstring, 'D', close[1])
+
+lowerBound = underlying * math.exp(-math.pow(BandClose / 100, 2) / 2 * (days / 365) - math.sqrt(days / 365) * (BandClose) / 100)
+upperBound = underlying * math.exp(-math.pow(BandClose / 100, 2) / 2 * (days / 365) + math.sqrt(days / 365) * (BandClose) / 100)
+
+// Calculs des bornes pour les niveaux 70%, 80%, et 90%
+range_10_percent = lowerBound + 0.1 * (upperBound - lowerBound)
+range_20_percent = lowerBound + 0.2 * (upperBound - lowerBound)
+range_30_percent = lowerBound + 0.3 * (upperBound - lowerBound)
+range_50_percent = lowerBound + 0.5 * (upperBound - lowerBound)
+range_70_percent = lowerBound + 0.7 * (upperBound - lowerBound)
+range_80_percent = lowerBound + 0.8 * (upperBound - lowerBound)
+range_90_percent = lowerBound + 0.9 * (upperBound - lowerBound)
+
+// Function outputs 1 when it's the first bar of the D/W/M/Y
+is_newbar(res) =>
+    ch = 0
+    if(res == 'Y')
+        t  = year(time('D'))
+        ch := ta.change(t) != 0 ? 1 : 0
+    else
+        t = time(res)
+        ch := ta.change(t) != 0 ? 1 : 0
+    ch
+
+bars_sinse = 0
+bars_sinse := is_newbar('D') ? 0 : bars_sinse[1] + 1
+
+
+// ========================================
+//          Analyse cross UT, sentiment sur plusieurs UT, fear and greed, achat sur fear ut courte avec optimisme sur ut + grande ou scalp contrarien prise de profit et reverse.
+// ========================================
+
+ratingSignal = input.string(defval = "All", title = "Rating is based on", options = ["MAs", "Oscillators", "All"], group = "Signaux techniques")
+
+
+useMtf1 = input(true, "", inline="mtf1", group = "Signaux techniques")
+mtf1 = input.timeframe("5", "", inline="mtf1", group = "Signaux techniques")
+useMtf2 = input(true, "", inline="mtf2", group = "Signaux techniques")
+mtf2 = input.timeframe("15", "", inline="mtf2", group = "Signaux techniques")
+useMtf3 = input(true, "", inline="mtf3", group = "Signaux techniques")
+mtf3 = input.timeframe("60", "", inline="mtf3", group = "Signaux techniques")
+useMtf4 = input(true, "", inline="mtf4", group = "Signaux techniques")
+mtf4 = input.timeframe("240", "", inline="mtf4", group = "Signaux techniques")
+useMtf5 = input(true, "", inline="mtf5", group = "Signaux techniques")
+mtf5 = input.timeframe("1D", "", inline="mtf5", group = "Signaux techniques")
+
+StrongBound = 0.5
+WeakBound = 0.1
+
+getSignal(ratingTotal, ratingOther, ratingMA) =>
+    if ratingSignal == "MAs"
+        ratingMA
+    else if ratingSignal == "Oscillators"
+        ratingOther
+    else
+    	ratingTotal
+
+[ratingTotalCurrent, ratingOtherCurrent, ratingMACurrent]  = request.security(syminfo.tickerid, res, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotal_mtf1,   ratingOther_mtf1,   ratingMA_mtf1]    = request.security(syminfo.tickerid, mtf1, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotal_mtf2,   ratingOther_mtf2,   ratingMA_mtf2]    = request.security(syminfo.tickerid, mtf2, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotal_mtf3,   ratingOther_mtf3,   ratingMA_mtf3]    = request.security(syminfo.tickerid, mtf3, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotal_mtf4,   ratingOther_mtf4,   ratingMA_mtf4]    = request.security(syminfo.tickerid, mtf4, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+[ratingTotal_mtf5,   ratingOther_mtf5,   ratingMA_mtf5]    = request.security(syminfo.tickerid, mtf5, rating.calcRatingAll(), lookahead = barmerge.lookahead_off)
+
+SeuilSentimentAcheteur1  = 0.1
+SeuilSentimentAcheteur2  = 0.2
+SeuilSentimentAcheteur3  = 0.4
+SeuilSentimentAcheteur4  = 0.5
+
+Seuil1SentimentVendeur1  = -0.1
+Seuil2rSentimentVendeur2 = -0.2
+Seuil3SentimentVendeur3  = -0.3
+Seuil4SentimentVendeur4  = -0.4
+
+RatingALL = ratingTotal_mtf5
+
+tradeSignal = getSignal(ratingTotalCurrent, ratingOtherCurrent, ratingMACurrent)
+
+// Get Table Size
+table_size(s) => 
+    switch s
+        "Auto"   => size.auto   
+        "Huge"   => size.huge   
+        "Large"  => size.large  
+        "Normal" => size.normal 
+        "Small"  => size.small
+        => size.tiny
+
+setup_group= "████████ Indicator Setup ████████"
+
+showdashboard = input.bool (true, "Show Dashboard", group=setup_group,inline='dashboard')
+string i_tab1Ypos = input.string('bottom', 'Dashboard Position',group=setup_group, inline='dashboard2', options=['top', 'middle', 'bottom'])
+string i_tab1Xpos = input.string('right', '', inline='dashboard2', group=setup_group,options=['left', 'center', 'right'])
+in_dashboardtab_size = input.string(title="Dashboard Size    ", defval="Normal", 
+     options=["Auto",  "Huge",  "Large", "Normal", "Small", "Tiny"], 
+     group= setup_group , inline= "dashboard3")
+
+mtf1StatusLong      = ratingTotal_mtf1 > 0 ? "✓" : "☓"
+mtf1StatusShort     = ratingTotal_mtf1 < 0 ? "✓" : "☓"
+
+mtf2StatusLong      = ratingTotal_mtf2 > 0 ? "✓" : "☓"
+mtf2StatusShort     = ratingTotal_mtf2 < 0 ? "✓" : "☓"
+
+mtf3StatusLong      = ratingTotal_mtf3 > 0 ? "✓" : "☓"
+mtf3StatusShort     = ratingTotal_mtf3 < 0 ? "✓" : "☓"
+
+mtf4StatusLong      = ratingTotal_mtf4 > 0 ? "✓" : "☓"
+mtf4StatusShort     = ratingTotal_mtf4 < 0 ? "✓" : "☓"
+
+mtf5StatusLong      = ratingTotal_mtf5 > 0 ? "✓" : "☓"
+mtf5StatusShort     = ratingTotal_mtf5 < 0 ? "✓" : "☓"
+
+var cumVol = 0.
+cumVol += nz(volume)
+if barstate.islast and cumVol == 0
+    runtime.error("No volume is provided by the data vendor.")
+
+normalizedScore1    = request.security(syminfo.tickerid, mtf1, SignalLongShortVolume())
+normalizedScore2    = request.security(syminfo.tickerid, mtf2, SignalLongShortVolume())
+normalizedScore3    = request.security(syminfo.tickerid, mtf3, SignalLongShortVolume())
+normalizedScore4    = request.security(syminfo.tickerid, mtf4, SignalLongShortVolume())
+normalizedScore5    = request.security(syminfo.tickerid, mtf5, SignalLongShortVolume())
+
+normalizedScore1LongUT1      = normalizedScore1 > 0 ? "✓" : "☓"
+normalizedScore1ShortUT1     = normalizedScore1 < 0 ? "✓" : "☓"
+
+normalizedScore1LongUT2      = normalizedScore2 > 0 ? "✓" : "☓"
+normalizedScore1ShortUT2     = normalizedScore2 < 0 ? "✓" : "☓"
+
+normalizedScore1LongUT3      = normalizedScore3 > 0 ? "✓" : "☓"
+normalizedScore1ShortUT3     = normalizedScore3 < 0 ? "✓" : "☓"
+
+normalizedScore1LongUT4      = normalizedScore4 > 0 ? "✓" : "☓"
+normalizedScore1ShortUT4     = normalizedScore4 < 0 ? "✓" : "☓"
+
+normalizedScore1LongUT5      = normalizedScore5 > 0 ? "✓" : "☓"
+normalizedScore1ShortUT5     = normalizedScore5 < 0 ? "✓" : "☓"
+ltf = input.timeframe(defval="1", title='Timeframe for Volume Data')
+lookback = input.int(defval=500, title='Bars to Look Back')
+
+oi = input.symbol("BTCUSDTPERP_OI", title="Open Interest Ticker")
+oicalc = input.string(defval="Close - Prev Close", title="Open Interest Calculation", options=["Close - Prev Close", "Close - Open", "Close"])
+
+upAndDownVolume() =>
+    posVol = 0.0
+    negVol = 0.0  
+    for i = 0 to 13
+        if i > 0
+            if close[i] > open[i]
+                posVol := posVol + volume[i]
+            else if close[i] < open[i]
+                negVol := negVol - volume[i]
+            else if close[i] >= close[i - 1]
+                posVol := posVol + volume[i]
+            else if close[i] < close[i - 1]
+                negVol := negVol - volume[i]
+    [posVol, negVol, volume]
+
+calculateDeltaAndEMAandOI(Timeframe) =>
+    [upVol, downVol, vol]               = request.security_lower_tf(syminfo.tickerid, Timeframe, upAndDownVolume())
+    delta                               = array.sum(upVol) + array.sum(downVol)
+    deltac                              = ta.ema(delta, 14)
+    [oiOpen, oiHigh, oiLow, oiClose]    = request.security(oi, Timeframe, [open, high, low, close], ignore_invalid_symbol=true)
+    oiValue                             = oicalc == "Close - Prev Close" ? oiClose - oiClose[1] : oicalc == "Close - Open" ? oiClose - oiOpen : oiClose
+    [delta, oiValue, deltac]
+
+normalisedScores(delta, Openinterest, deltac) =>
+    normalisedScoreDeltaLong    = delta > deltac ? "✓" : "☓"
+    normalisedScoreDeltaShort   = delta < deltac ? "✓" : "☓"
+    normalisedScoreOILong       = Openinterest > 0 ? "✓" : "☓"
+    normalisedScoreOIShort      = Openinterest < 0 ? "✓" : "☓"
+    [normalisedScoreDeltaLong, normalisedScoreDeltaShort, normalisedScoreOILong, normalisedScoreOIShort]
+
+Timeframe1CVDOI                             = input.timeframe("5", "", inline="mtf1", group = "CVD OI")
+[delta, Openinterest, deltac]               = calculateDeltaAndEMAandOI(Timeframe1CVDOI)
+[normalisedScoreDeltaLong, normalisedScoreDeltaShort, normalisedScoreOILong, normalisedScoreOIShort] = normalisedScores(delta, Openinterest, deltac)
+
+Timeframe2CVDOI                             = input.timeframe("15", "", inline="mtf1", group = "CVD OI")
+[delta2, Openinterest2, deltac2]            = calculateDeltaAndEMAandOI(Timeframe2CVDOI)
+[normalisedScoreDeltaLong2, normalisedScoreDeltaShort2, normalisedScoreOILong2, normalisedScoreOIShort2] = normalisedScores(delta2, Openinterest2, deltac2)
+
+Timeframe3CVDOI                             = input.timeframe("30", "", inline="mtf1", group = "CVD OI")
+[delta3, Openinterest3, deltac3]            = calculateDeltaAndEMAandOI(Timeframe2CVDOI)
+[normalisedScoreDeltaLong3, normalisedScoreDeltaShort3, normalisedScoreOILong3, normalisedScoreOIShort3] = normalisedScores(delta2, Openinterest2, deltac2)
+
+Timeframe4CVDOI                             = input.timeframe("45", "", inline="mtf1", group = "CVD OI")
+[delta4, Openinterest4, deltac4]            = calculateDeltaAndEMAandOI(Timeframe2CVDOI)
+[normalisedScoreDeltaLong4, normalisedScoreDeltaShort4, normalisedScoreOILong4, normalisedScoreOIShort4] = normalisedScores(delta2, Openinterest2, deltac2)
+
+//
+// Saisonalité
+//
+
+
+//#region ———————————————————— Constants, inputs, and global variables
+
+
+// Start year setting 
+int startYearInput = 2015
+
+//@variable The current year at the closing time.
+int currYear = year(time_close)
+//@variable The current month at the closing time.
+int currMonth = month(time_close)
+//#endregion
+
+//#region ———————————————————— Functions and methods
+
+//@function                 Returns the one-bar change percentage of the `source`.
+changePercent(float source) => 100.0 * (source - source[1]) / source[1]
+
+//@function                 Returns the number of non-na values in `this` array.
+method nonNA(array<float> this) =>
+    int result = 0
+    for item in this
+        if not na(item)
+            result += 1
+    result
+
+//@function                 Returns the percentage of positive non-na values in `this` array.
+method percentPositive(array<float> this) =>
+    int nonNA = 0
+    int pos   = 0
+    for item in this
+        if not na(item)
+            nonNA += 1
+            if item >= 0
+                pos += 1
+    float result = 100.0 * pos / nonNA
+
+//@function                 Calculates a matrix of monthly changes, starting from the beginning of a specified year.
+//@param startYear          The year where the calculations start.
+//@returns                  A tuple containing an array of year indices and the matrix of monthly changes.
+calculateMontlyChanges(int startYear) =>
+    var matrix<float> dataMatrix        = matrix.new<float>(0, 13)
+    var array<int>    yearIndexArray    = array.new<int>()
+    int               prevBarYear       = currYear[1]
+    int               prevBarMonth      = currMonth[1]
+    float             prevChangePercent = changePercent(close[1])
+    if prevBarYear >= startYear
+        if prevBarYear != prevBarYear[1] or dataMatrix.rows() == 0
+            dataMatrix.add_row()
+            yearIndexArray.push(prevBarYear)
+        dataMatrix.set(dataMatrix.rows() - 1, prevBarMonth, prevChangePercent)
+    [yearIndexArray, dataMatrix]
+//#endregion
+
+//#region ———————————————————— Main calculations and outputs
+
+// A tuple containing year indices and monthly changes.
+[yearIndexArray, changesMatrix] = request.security(
+     syminfo.tickerid, "1M", calculateMontlyChanges(startYearInput), lookahead = barmerge.lookahead_on
+ )
+
+//@variable An array containing the abbreviated names for each month.
+var monthNames = array.from("Year", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+// Obtention de l'indice du mois courant
+currentMonthIndex = month(time_close)
+
+float stdevValue = 0.00
+float ratioValue = 0.00
+
+// Heatmap calculations
+if barstate.islast
+    // "StDev" data cell calculations
+    for i = 1 to changesMatrix.columns() - 1
+        stdevValue := changesMatrix.col(currentMonthIndex).stdev(false)
+        ratioValue := changesMatrix.col(currentMonthIndex).percentPositive()
+
+normalisedstdevValueLong            = stdevValue > 0 ? "✓ : +"+str.tostring(math.round(stdevValue)) + " %": "☓"
+normalisedstdevValueShort           = stdevValue < 0 ? "✓ : +"+str.tostring(math.round(stdevValue)) + " %" : "☓"
+normalisedratioValueLong            = ratioValue > 50 ? "✓ : "+str.tostring(ratioValue)+" %" : "☓"
+normalisedratioValueShort           = ratioValue < 50 ? "✓ : "+str.tostring(ratioValue)+" %" : "☓"
+
+// Récupérer les données de sentiment depuis différentes sources
+BTC_TELEGRAMPOSITIVE  = request.security("INTOTHEBLOCK:BTC_TELEGRAMPOSITIVE", "1D", close)
+BTC_TELEGRAMNEGATIVE  = request.security("INTOTHEBLOCK:BTC_TWITTERNEGATIVE", "1D", close)
+BTC_TWITTERPOSITIVE   = request.security("INTOTHEBLOCK:BTC_TWITTERPOSITIVE", "1D", close)
+BTC_TWITTERNEGATIVE   = request.security("INTOTHEBLOCK:BTC_TWITTERNEGATIVE", "1D", close)
+
+// Calcul du changement de prix par rapport à la clôture de la barre précédente
+changeTelegramPositive = BTC_TELEGRAMPOSITIVE + BTC_TWITTERPOSITIVE
+changeTelegramNegative = BTC_TELEGRAMNEGATIVE + BTC_TWITTERNEGATIVE
+
+
+if showdashboard
+    var table tab1 = table.new(i_tab1Ypos + '_' + i_tab1Xpos, 27, 27, color.rgb(42, 46, 57), color.rgb(204, 204, 204), 0, color.rgb(77, 71, 71), 1)
+
+    table.cell(tab1, 0, 0,"👔 - Pierre Wacquez  📠", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 0,"Long", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 0,"Short", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+
+    table.cell(tab1, 0, 1, "[1 - Analyse du sentiment des investisseurs]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 1,"🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 1,"🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white, text_color=color.black)
+
+    table.cell(tab1, 0, 2, mtf1, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 2, mtf1StatusLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 2, mtf1StatusShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 3, mtf2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 3, mtf2StatusLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 3, mtf2StatusShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 4, mtf3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 4, mtf3StatusLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 4, mtf3StatusShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 5, mtf4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 5, mtf4StatusLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 5, mtf4StatusShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 6, mtf5, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 6, mtf5StatusLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 6, mtf5StatusShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 7, "[2 - Analyse de l'intérêt des investisseurs par volume]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 7, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 7, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+
+    table.cell(tab1, 0, 8, mtf1, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 8, normalizedScore1LongUT1, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 8, normalizedScore1ShortUT1, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 9, mtf2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 9, normalizedScore1LongUT2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 9, normalizedScore1ShortUT2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 10, mtf3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 10, normalizedScore1LongUT3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 10, normalizedScore1ShortUT3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 11, mtf4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 11, normalizedScore1LongUT4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 11, normalizedScore1ShortUT4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 12, "[3 - Analyse de la pression par CVD]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 12, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 12, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+
+    table.cell(tab1, 0, 13, Timeframe1CVDOI, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 13, normalisedScoreDeltaLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 13, normalisedScoreDeltaShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 14, Timeframe2CVDOI, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 14, normalisedScoreDeltaLong2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 14, normalisedScoreDeltaShort2, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 15, Timeframe3CVDOI, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 15, normalisedScoreDeltaLong3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 15, normalisedScoreDeltaShort3, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 16, Timeframe4CVDOI, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 16, normalisedScoreDeltaLong4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 16, normalisedScoreDeltaShort4, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 17, "[4 -  Analyse de la corrélation du marché ]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 17, LongSentiment, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 17, ShortSentiment, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+
+    table.cell(tab1, 0, 18, "[5 -  Analyse de cycles]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 18, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 18, "🕛🕧🕜🕒🕓🕦🕘", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+
+    table.cell(tab1, 0, 19, "MonthlyAVG :", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 19, normalisedstdevValueLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 19, normalisedstdevValueShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 20, "Confiance :", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 1, 20, normalisedratioValueLong, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+    table.cell(tab1, 2, 20, normalisedratioValueShort, text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), text_color=color.white)
+
+    table.cell(tab1, 0, 21, "[6 -  Analyse Sociale ]", text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 1, 21, str.tostring(changeTelegramPositive), text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    table.cell(tab1, 2, 21, str.tostring(changeTelegramNegative), text_halign=text.align_center, text_size=table_size(in_dashboardtab_size), bgcolor=color.white,text_color=color.black)
+    
+
+// ========================================
+//         8 - Ajout ichimoku sur bornes de volatilité implicite avec la distribution normale du jour
+// ========================================
+
+R5plot = line.new(bar_index[4999], upperBound, bar_index, upperBound, color=  color.black, width = 1, extend = extend.right)
+R4plot = line.new(bar_index[4999], range_90_percent, bar_index, range_90_percent, color=  color.black,  width = 1, extend = extend.right)
+R3plot = line.new(bar_index[4999], range_80_percent, bar_index, range_80_percent, color=  color.black, width = 1, extend = extend.right)
+R2plot = line.new(bar_index[4999], range_70_percent, bar_index, range_70_percent, color=  color.black, width = 1, extend = extend.right)
+
+middle = line.new(bar_index[4999], range_50_percent, bar_index, range_50_percent, color=  color.black, width = 1, extend = extend.right)
+
+S2plot = line.new(bar_index[4999], range_30_percent, bar_index, range_30_percent, color=  color.black, width = 1, extend = extend.right)
+S3plot = line.new(bar_index[4999], range_20_percent, bar_index, range_20_percent, color=  color.black, width = 1, extend = extend.right)
+S4plot = line.new(bar_index[4999], range_10_percent, bar_index, range_10_percent, color=  color.black, width = 1, extend = extend.right)
+S5plot = line.new(bar_index[4999], lowerBound, bar_index, lowerBound, color=  color.black, width = 1, extend = extend.right)
+
+line.delete(R5plot[1])
+line.delete(R4plot[1])
+line.delete(R3plot[1])
+line.delete(R2plot[1])
+line.delete(S2plot[1])
+line.delete(S3plot[1])
+line.delete(S4plot[1])
+line.delete(S5plot[1])
+line.delete(middle[1])
+
+// ========================================
+//         9 - Ajout d'un indicateur d'écart à la volatilité basée cette fois-ci sur l'ATR
+// ========================================
+
+// Configurations des probabilités
+hps = input(true, title="High Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de haute probabilité
+mps = input(false, title="Mid Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de probabilité moyenne
+lps = input(false, title="Low Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de basse probabilité
+
+src = ohlc4  //
+len1 = 7     // 
+len2 = 14    // 
+len3 = 21    //
+
+// Moyenne Mobile (Point Milieu de la Juste Valeur)
+ma1 = ta.sma(src, len1)  // Calcule la moyenne mobile de la période len1
+ma2 = ta.sma(src, len2)  // Calcule la moyenne mobile de la période len2
+ma3 = ta.sma(src, len3)  // Calcule la moyenne mobile de la période len3
+
+// ATR (Unités de Volatilité Dynamiques)
+rng1 = ta.sma(ta.tr(na), len1)  // Calcule l'Average True Range (ATR) pour la période len1
+rng2 = ta.sma(ta.tr(na), len2)  // Calcule l'Average True Range (ATR) pour la période len2
+rng3 = ta.sma(ta.tr(na), len3)  // Calcule l'Average True Range (ATR) pour la période len3
+
+// Déviation ATR ou Sauce Secrète du Promoteur
+up1 = ma1 + rng1 * 1.6  // Détermine la limite supérieure pour le premier ensemble de probabilités
+up2 = ma2 + rng2 * 2.4  // Détermine la limite supérieure pour le deuxième ensemble de probabilités
+up3 = ma2 + rng3 * 3.2  // Détermine la limite supérieure pour le troisième ensemble de probabilités
+
+dn1 = ma1 - rng1 * 1.6  // Détermine la limite inférieure pour le premier ensemble de probabilités
+dn2 = ma2 - rng2 * 2.4  // Détermine la limite inférieure pour le deuxième ensemble de probabilités
+dn3 = ma2 - rng2 * 3.2  // Détermine la limite inférieure pour le troisième ensemble de probabilités
+
+// Configuration de Trade à Faible Probabilité
+ERhigh1 = high > up1 ? 1 : 0  // Détermine si le prix élevé est au-dessus de la limite supérieure pour le premier ensemble de probabilités
+ERlow1 = low < dn1 ? 1 : 0    // Détermine si le prix bas est en dessous de la limite inférieure pour le premier ensemble de probabilités
+
+// Configuration de Trade à Probabilité Moyenne
+ERhigh2 = high > up1 and high > up2 ? 1 : 0  // Détermine si le prix élevé est au-dessus des limites supérieures pour les ensembles 1 et 2
+ERlow2 = low < dn1 and low < dn2 ? 1 : 0     // Détermine si le prix bas est en dessous des limites inférieures pour les ensembles 1 et 2
+
+// Configuration de Trade à Haute Probabilité
+ERhigh3 = high > up1 and high > up2 and high > up3 ? 1 : 0  // Détermine si le prix élevé est au-dessus des limites supérieures pour les ensembles 1, 2 et 3
+ERlow3 = low < dn1 and low < dn2 and low < dn3 ? 1 : 0     // Détermine si le prix bas est en dessous des limites inférieures pour les ensembles 1, 2 et 3
+
+// Tracés en fonction de la sélection
+HiPERh = hps and ERhigh3[1] != 1 and ERhigh3 ? 1 : 0  // Trace un point si la configuration de haute probabilité est activée et que les conditions de configuration de haute probabilité sont remplies
+HiPERl = hps and ERlow3[1] != 1 and ERlow3 ? 1 : 0    // Trace un point si la configuration de haute probabilité est activée et que les conditions de configuration de basse probabilité sont remplies
+
+MiPERh = mps and HiPERh == 0 and ERhigh2[1] != 1 and ERhigh2 ? 1 : 0  // Trace un point si la configuration de probabilité moyenne est activée et que les conditions de configuration de haute probabilité ne sont pas remplies et que les conditions de configuration de probabilité moyenne le sont
+MiPERl = mps and HiPERl == 0 and ERlow2[1] != 1 and ERlow2 ? 1 : 0    // Trace un point si la configuration de probabilité moyenne est activée et que les conditions de configuration de haute probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+
+LoPERh = lps and HiPERh == 0 and MiPERh == 0 and ERhigh1[1] != 1 and ERhigh1 ? 1 : na  // Trace un point si la configuration de basse probabilité est activée et que les conditions de configuration de haute et de moyenne probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+LoPERl = lps and HiPERl == 0 and MiPERl == 0 and ERlow1[1] != 1 and ERlow1 ? 1 : na  // Trace un point si la configuration de basse probabilité est activée et que les conditions de configuration de haute et de moyenne probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+
+// PLOT
+plotshape(HiPERh, style = shape.labeldown, location = location.abovebar, color = #fffffffb , text = "🐊", textcolor = #ffffff, title = "🐊")
+plotshape(HiPERl, style = shape.labelup, location = location.belowbar, color = #ffffff , text = "🐊", textcolor = #ffffff, title = "🐊")
+plotshape(MiPERh, style = shape.labeldown, location = location.abovebar, color = #ffffff , text = "🐊", textcolor = #ffffff, title = "🐊")
+plotshape(MiPERl, style = shape.labelup, location = location.belowbar, color = #ffffff , text = "🐊", textcolor = #ffffff, title = "🐊")
+plotshape(LoPERh, style = shape.labeldown, location = location.abovebar, color = #ffffff , text = "🐊", textcolor = #ffffff, title = "🐊")
+plotshape(LoPERl, style = shape.labelup, location = location.belowbar, color = #ffffff , text = "🐊", textcolor = #ffffff, title = "🐊")
+
+
+// ========================================
+//         10 - Ajout d'un indicateur d'écart des prix avec le Z-score
+// ========================================
+
+lengthZscore    = 14
+stdevInput      = input.string(title="Standard Deviation", defval="Population", options=["Population", "Sample"], group = "zscore")
+
+sampleStdev(src, lengthZscore) =>
+    dev = src - ta.sma(src, lengthZscore)
+    variance = math.sum(dev * dev, lengthZscore) / (lengthZscore - 1)
+    math.sqrt(variance)
+
+selectedStdev = stdevInput == "Population"
+     ? ta.stdev(src, lengthZscore)
+     : sampleStdev(src, lengthZscore)
+
+zsc = (src - ta.sma(src, lengthZscore)) / selectedStdev
+
+periodes = input.int(defval = 6, title = "periodes loockback", group = "zsc")
+
+/////////////////////////////////////////
+//CHaine regression Linéaire
+//////////////////////////////////////////
+lengthLin = input.int(100, group = "linear")
+group1 = "Channel Settings"
+useUpperDevInput = input.bool(true, title="Upper Deviation", inline = "Upper Deviation", group = group1)
+upperMultInput = input.float(2.0, title="", inline = "Upper Deviation", group = group1)
+useLowerDevInput = input.bool(true, title="Lower Deviation", inline = "Lower Deviation", group = group1)
+lowerMultInput = input.float(2.0, title="", inline = "Lower Deviation", group = group1)
+
+group2 = "Display Settings"
+showPearsonInput = input.bool(true, "Show Pearson's R", group = group2)
+extendLeftInput = input.bool(false, "Extend Lines Left", group = group2)
+extendRightInput = input.bool(true, "Extend Lines Right", group = group2)
+extendStyle = switch
+    extendLeftInput and extendRightInput => extend.both
+    extendLeftInput => extend.left
+    extendRightInput => extend.right
+    => extend.none
+
+group3 = "Color Settings"
+colorUpper = input.color(color.new(#ffffff, 92), "", inline = group3, group = group3)
+colorLower = input.color(color.new(#ffffff, 91), "", inline = group3, group = group3)
+
+calcSlope(source, length) =>
+    max_bars_back(source, 5000)
+    if not barstate.islast or length <= 1
+        [float(na), float(na), float(na)]
+    else
+        sumX = 0.0
+        sumY = 0.0
+        sumXSqr = 0.0
+        sumXY = 0.0
+        for i = 0 to length - 1 by 1
+            val = source[i]
+            per = i + 1.0
+            sumX += per
+            sumY += val
+            sumXSqr += per * per
+            sumXY += val * per
+        slope = (length * sumXY - sumX * sumY) / (length * sumXSqr - sumX * sumX)
+        average = sumY / length
+        intercept = average - slope * sumX / length + slope
+        [slope, average, intercept]
+        
+[s, a, i] = calcSlope(close, lengthLin)
+startPrice = i + s * (lengthLin - 1)
+endPrice = i
+var line baseLine = na
+if na(baseLine) and not na(startPrice)
+    baseLine := line.new(bar_index - lengthLin + 1, startPrice, bar_index, endPrice, width=1, extend=extendStyle, color=color.new(colorLower, 0))
+else
+    line.set_xy1(baseLine, bar_index - lengthLin + 1, startPrice)
+    line.set_xy2(baseLine, bar_index, endPrice)
+    na
+    
+calcDev(source, length, slope, average, intercept) =>
+    upDev = 0.0
+    dnDev = 0.0
+    stdDevAcc = 0.0
+    dsxx = 0.0
+    dsyy = 0.0
+    dsxy = 0.0
+    periods = length - 1
+    daY = intercept + slope * periods / 2
+    val = intercept
+    for j = 0 to periods by 1
+        price = high[j] - val
+        if price > upDev
+            upDev := price
+        price := val - low[j]
+        if price > dnDev
+            dnDev := price
+        price := source[j]
+        dxt = price - average
+        dyt = val - daY
+        price -= val
+        stdDevAcc += price * price
+        dsxx += dxt * dxt
+        dsyy += dyt * dyt
+        dsxy += dxt * dyt
+        val += slope
+    stdDev = math.sqrt(stdDevAcc / (periods == 0 ? 1 : periods))
+    pearsonR = dsxx == 0 or dsyy == 0 ? 0 : dsxy / math.sqrt(dsxx * dsyy)
+    [stdDev, pearsonR, upDev, dnDev]
+    
+[stdDev, pearsonR, upDev, dnDev] = calcDev(close, lengthLin, s, a, i)
+upperStartPrice = startPrice + (useUpperDevInput ? upperMultInput * stdDev : upDev)
+upperEndPrice = endPrice + (useUpperDevInput ? upperMultInput * stdDev : upDev)
+var line upper = na
+lowerStartPrice = startPrice + (useLowerDevInput ? -lowerMultInput * stdDev : -dnDev)
+lowerEndPrice = endPrice + (useLowerDevInput ? -lowerMultInput * stdDev : -dnDev)
+var line lower = na
+if na(upper) and not na(upperStartPrice)
+    upper := line.new(bar_index - lengthLin + 1, upperStartPrice, bar_index, upperEndPrice, width=1, extend=extendStyle, color=color.new(colorUpper, 0))
+else
+    line.set_xy1(upper, bar_index - lengthLin + 1, upperStartPrice)
+    line.set_xy2(upper, bar_index, upperEndPrice)
+    na
+if na(lower) and not na(lowerStartPrice)
+    lower := line.new(bar_index - lengthLin + 1, lowerStartPrice, bar_index, lowerEndPrice, width=1, extend=extendStyle, color=color.new(colorUpper, 0))
+else
+    line.set_xy1(lower, bar_index - lengthLin + 1, lowerStartPrice)
+    line.set_xy2(lower, bar_index, lowerEndPrice)
+    na
+linefill.new(upper, baseLine, color = colorUpper)
+linefill.new(baseLine, lower, color = colorLower)
+
+float trend = math.sign(startPrice - endPrice)
+alertcondition(close > line.get_price(upper, bar_index) or close < line.get_price(lower, bar_index), title='Regression Channel Exited', message="The price movement has exited Regression Channel's bounds")
+alertcondition(trend[1] >= 0 and trend < 0, title='Switched to Uptrend', message='The Regression Channel trend switched from Downtrend to Uptrend')
+alertcondition(trend[1] <= 0 and trend > 0, title='Switched to Downtrend', message='The Regression Channel trend switched from Uptrend to Downtrend')
+
+// Pearson's R
+var label r = na
+label.delete(r[1])
+if showPearsonInput and not na(pearsonR)
+    r := label.new(bar_index - 100 + 1, lowerStartPrice, str.tostring(pearsonR, "#.################"), color = color.new(#ffffff, 100), textcolor=color.new(colorUpper, 0), size=size.normal, style=label.style_label_up)
+
+// ========================================
+//        Signaux
+// ========================================
+Cond1Buy    = ta.crossover(zsc , -2)  //Ecart z-score
+Cond2Buy    = RatingALL > 0 //Analyse de fond en unidirectionnelle haussière
+Cond3Buy    = low < range_30_percent // pris bas en zone de destribution normale basse
+
+
+Cond1Sell   = ta.crossunder(zsc , 2) 
+Cond2Sell   = RatingALL < 0
+Cond3Sell   = high > range_70_percent
+
+Buy     = Cond3Buy and Cond2Buy and Cond1Buy
+Sell    = Cond3Sell  and Cond2Sell   and Cond1Sell
+
+// ========================================
+//          Etiquettes ACHAT/VENTE 
+// ========================================
+
+plotshape(
+	 Buy   ?  close : na,
+	 title="bull",
+	 text="Achat",
+	 style=shape.labelup,
+	 location=location.belowbar,
+	 color=#ffffff,
+	 textcolor=color.rgb(0, 0, 0)
+	 )
+
+plotshape(
+	 Sell  ? close : na,
+	 title="bear",
+	 text="Vente",
+	 style=shape.labeldown,
+	 location=location.abovebar,
+	 color=#ffffff,
+	 textcolor=color.rgb(0, 0, 0)
+	 )
