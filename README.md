@@ -26,4 +26,15 @@ Rendez-vous sur le ticker BTC/USDT PERP :
 Appliquez le sur le graphique and enjoy.
 
 C'est surtout pour du scalping ticks, donc soyez vigilants !
+
+voici une autre stratégie que j'ai crée :
+![image](https://github.com/user-attachments/assets/9f4713d4-8f75-40e4-a702-71b343ea7aa6)
+le code dans mon repository
+
+
+
+
+
+
+
 bonne chance, 
