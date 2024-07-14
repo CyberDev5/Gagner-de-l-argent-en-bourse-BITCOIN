@@ -1,0 +1,316 @@
+//@version=5
+strategy("Pierre Wacquez", shorttitle="Stratégie de Pierre", overlay=true)
+
+// On choisit le nombre de périodes pour notre stratégie.
+periods = input.int(title="Périodes", defval=9, minval=2, maxval=100)  
+
+// Paramètres de configuration
+max_line_length = input.int(500, 'Longueur Max Ligne', minval=1, maxval=4500, group='Filtre')
+bull_line_color = input.color(#089981, 'Ligne Haussière', inline='bull', group='Style')
+bear_line_color = input.color(#f23645, 'Ligne Baissière', inline='bear', group='Style')
+
+// On définit une structure pour les lignes de fractales
+type fractal_line_info
+    line fractal_line
+    bool is_triggered
+    int bar_index
+
+var bull_fractal_lines = array.new<fractal_line_info>()
+var bear_fractal_lines = array.new<fractal_line_info>()
+
+var bool is_bull_line_deleted = false
+var bool is_bear_line_deleted = false
+
+// Variables pour les prix des fractales
+var float last_bull_fractal_price = na
+var float last_bear_fractal_price = na
+
+bool is_bull_triggered = false
+bool is_bear_triggered = false
+
+// Variables pour les niveaux Fibonacci
+var float last_fractal_high = na
+var float last_fractal_low = na
+
+var float fib_level_0_786 = na
+var float fib_level_1_0 = na
+var float fib_level_1_272 = na
+var float fib_level_1_414 = na
+
+// Détection des fractales haussières (qui montent)
+bool upflag_down_frontier = true
+bool upflag_up_frontier_0 = true
+
+for i = 1 to periods
+    upflag_down_frontier := upflag_down_frontier and (high[periods-i] < high[periods])
+    upflag_up_frontier_0 := upflag_up_frontier_0 and (high[periods+i] < high[periods])
+
+is_up_fractal = upflag_up_frontier_0
+up_fractal = (upflag_down_frontier and is_up_fractal)
+
+// Détection des fractales baissières (qui descendent)
+bool downflag_down_frontier = true
+bool downflag_up_frontier_0 = true
+
+for i = 1 to periods
+    downflag_down_frontier := downflag_down_frontier and (low[periods-i] > low[periods])
+    downflag_up_frontier_0 := downflag_up_frontier_0 and (low[periods+i] > low[periods])
+
+is_down_fractal = downflag_up_frontier_0
+down_fractal = (downflag_down_frontier and is_down_fractal)
+
+// Application des niveaux Fibonacci si on détecte une fractale haussière
+if up_fractal
+    last_fractal_high := high[periods]
+    last_fractal_low := ta.lowest(low, periods)
+    fib_level_0_786 := last_fractal_low + (last_fractal_high - last_fractal_low) * 0.786
+    fib_level_1_0 := last_fractal_low + (last_fractal_high - last_fractal_low)
+    fib_level_1_272 := last_fractal_low + (last_fractal_high - last_fractal_low) * 1.272
+    fib_level_1_414 := last_fractal_low + (last_fractal_high - last_fractal_low) * 1.414
+
+    array.push(bull_fractal_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=fib_level_1_0, x2=bar_index + 500, y2=fib_level_1_0, color=color.rgb(255,130,130, 100), width=1), true, bar_index))
+
+// Application des niveaux Fibonacci si on détecte une fractale baissière
+if down_fractal
+    last_fractal_low := low[periods]
+    last_fractal_high := ta.highest(high, periods)
+    fib_level_0_786 := last_fractal_high - (last_fractal_high - last_fractal_low) * 0.786
+    fib_level_1_272 := last_fractal_high - (last_fractal_high - last_fractal_low) * 1.272
+    fib_level_1_414 := last_fractal_high - (last_fractal_high - last_fractal_low) * 1.414
+
+    array.push(bear_fractal_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=fib_level_0_786, x2=bar_index + 500, y2=fib_level_0_786, color=color.rgb(130,255,130, 100), width=1), true, bar_index))
+
+// Vérifier et mettre à jour les lignes de fractales haussières
+if array.size(bull_fractal_lines) > 0
+    i = 0
+    while (i < array.size(bull_fractal_lines))
+        fractal_info = array.get(bull_fractal_lines, i)
+        if fractal_info.fractal_line.get_x2() > bar_index + max_line_length
+            line.delete(fractal_info.fractal_line)
+            array.remove(bull_fractal_lines, i)
+        else
+            if close > fractal_info.fractal_line.get_y2()
+                line.delete(fractal_info.fractal_line)
+                array.remove(bull_fractal_lines, i)
+                is_bull_line_deleted := true
+            else
+                if fractal_info.is_triggered and close < fractal_info.fractal_line.get_y1()
+                    future_bar_index = math.min(bar_index + 500, fractal_info.fractal_line.get_x1() + 500)
+                    fractal_info.fractal_line.set_x2(future_bar_index)
+                    fractal_info.is_triggered := false
+                i := i + 1
+
+// Vérifier et mettre à jour les lignes de fractales baissières
+if array.size(bear_fractal_lines) > 0
+    i = 0
+    while (i < array.size(bear_fractal_lines))
+        fractal_info = array.get(bear_fractal_lines, i)
+        if fractal_info.fractal_line.get_x2() > bar_index + max_line_length
+            line.delete(fractal_info.fractal_line)
+            array.remove(bear_fractal_lines, i)
+        else
+            if close < fractal_info.fractal_line.get_y2()
+                line.delete(fractal_info.fractal_line)
+                array.remove(bear_fractal_lines, i)
+                is_bear_line_deleted := true
+            else
+                if fractal_info.is_triggered and close > fractal_info.fractal_line.get_y1()
+                    future_bar_index = math.min(bar_index + 500, fractal_info.fractal_line.get_x1() + 500)
+                    fractal_info.fractal_line.set_x2(future_bar_index)
+                    fractal_info.is_triggered := false
+                i := i + 1
+
+// Ajouter les indicateurs RSI et ADX
+rsi_length = input.int(14, minval=1, title="Longueur RSI")
+rsi_value = ta.rsi(close, rsi_length)
+
+adx_length = input.int(3, minval=1, title="Longueur ADX")
+true_range = ta.rma(ta.tr(true), adx_length)
+
+// Calculer le mouvement directionnel positif et négatif
+up_move = high - high[1]
+down_move = low[1] - low
+positive_dm = na(up_move) or (up_move > down_move and up_move > 0) ? up_move : 0
+negative_dm = na(down_move) or (down_move > up_move and down_move > 0) ? down_move : 0
+
+smoothed_positive_dm = ta.rma(positive_dm, adx_length)
+smoothed_negative_dm = ta.rma(negative_dm, adx_length)
+
+di_positive = 100 * (smoothed_positive_dm / true_range)
+di_negative = 100 * (smoothed_negative_dm / true_range)
+
+dx_value = 100 * math.abs((di_positive - di_negative) / (di_positive + di_negative))
+adx_value = ta.rma(dx_value, adx_length)
+
+// Conditions d'entrée et de sortie basées sur %b et les indicateurs RSI et ADX
+bars_to_check = 4
+long_condition = ta.barssince(is_bear_line_deleted) < bars_to_check and ta.barssince(adx_value > 25) < bars_to_check and ta.barssince(ta.crossover(di_positive, di_negative)) < bars_to_check and ta.barssince(rsi_value < 30) < bars_to_check
+short_condition = ta.barssince(is_bull_line_deleted) < bars_to_check and ta.barssince(adx_value > 25) < bars_to_check and ta.barssince(ta.crossunder(di_positive, di_negative)) < bars_to_check and ta.barssince(rsi_value > 70) < bars_to_check
+
+
+
+//plot(strategy.equity, title="equity", color=color.red, linewidth=2, style=plot.style_areabr)
+// Application des conditions d'entrée et de sortie
+atr_length = input.int(14, title="Longueur ATR")
+atr_multiplier = input.float(1.0, title="Multiplicateur ATR", minval=0.0)
+atr_value = ta.atr(atr_length)
+
+var long_stop_loss_lines = array.new<fractal_line_info>()
+var short_stop_loss_lines = array.new<fractal_line_info>()
+var long_take_profit_lines = array.new<fractal_line_info>()
+var short_take_profit_lines = array.new<fractal_line_info>()
+
+var float entry_price = na
+var float stop_loss_price = na
+var float take_profit_price = na
+
+var bool in_long_position = false
+var bool in_short_position = false
+var bool update_long_label = true
+var bool update_short_label = true
+var label long_label = na
+var label short_label = na
+
+var float cumulative_gains = 0.0
+
+if (long_condition)
+    if in_short_position
+        // Fermer la position courte avant d'entrer en position longue
+        in_short_position := false
+        label.delete(short_label)
+        short_label := na
+    entry_price := close
+    stop_loss_price := close - atr_value * atr_multiplier
+    take_profit_price := close + atr_value * atr_multiplier
+    in_long_position := true
+    update_long_label := true
+    strategy.close_all()
+    
+    if na(long_label)
+        long_label := label.new(x=bar_index, y=high, yloc=yloc.belowbar, text='', style=label.style_label_up, color=color.green, textcolor=color.white)
+
+    strategy.entry("long", strategy.long, comment="long", stop = stop_loss_price, limit = take_profit_price)
+
+
+    label.set_xy(long_label, bar_index, high)
+    label.new(x=bar_index, y=low, yloc=yloc.abovebar, text=str.tostring(math.round(entry_price)), style=label.style_label_down, color=color.green, textcolor=color.white)
+    label.set_text(long_label, 'Achat\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + str.tostring(math.round(close - entry_price)))
+    array.push(long_stop_loss_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=stop_loss_price, x2=bar_index + 500, y2=stop_loss_price, color=color.orange, width=1), true, bar_index))
+    array.push(long_take_profit_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=take_profit_price, x2=bar_index + 500, y2=take_profit_price, color=color.green, width=1), true, bar_index))
+
+if (short_condition)
+    if in_long_position
+        // Fermer la position longue avant d'entrer en position courte
+        in_long_position := false
+        label.delete(long_label)
+        long_label := na
+        strategy.close_all()
+
+    entry_price := close
+    label.new(x=bar_index, y=low, yloc=yloc.abovebar, text=str.tostring(math.round(entry_price)), style=label.style_label_down, color=color.red, textcolor=color.white)
+    stop_loss_price := close + atr_value * atr_multiplier
+    take_profit_price := close - atr_value * atr_multiplier
+    in_short_position := true
+    update_short_label := true
+    if na(short_label)
+        short_label := label.new(x=bar_index, y=low, yloc=yloc.abovebar, text='', style=label.style_label_down, color=color.red, textcolor=color.white)
+    
+    strategy.entry("short", strategy.short, comment="short", stop = stop_loss_price, limit = take_profit_price)
+
+    label.set_xy(short_label, bar_index, low)
+    label.set_text(short_label, 'Vente\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + str.tostring(math.round(entry_price - close)))
+    array.push(short_stop_loss_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=stop_loss_price, x2=bar_index + 500, y2=stop_loss_price, color=color.orange, width=1), true, bar_index))
+    array.push(short_take_profit_lines, fractal_line_info.new(line.new(x1=bar_index-periods, y1=take_profit_price, x2=bar_index + 500, y2=take_profit_price, color=color.green, width=1), true, bar_index))
+
+if in_long_position and not na(long_label) and update_long_label
+    label.set_text(long_label, 'Achat\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + str.tostring(math.round(close - entry_price)))
+    label.set_xy(long_label, bar_index, high)
+
+if in_short_position and not na(short_label) and update_short_label
+    label.set_text(short_label, 'Vente\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + str.tostring(math.round(entry_price - close)))
+    label.set_xy(short_label, bar_index, low)
+
+plot(in_long_position or in_short_position ? entry_price : na, "Prix d'entrée", color = color.black, style = plot.style_linebr, linewidth = 2)
+plot(in_long_position ? stop_loss_price : na, "Stop-loss", color = color.red, style = plot.style_linebr, linewidth = 2)
+plot(in_long_position or in_short_position ? take_profit_price : na, "Take-profit", color = color.green, style = plot.style_linebr, linewidth = 2)
+
+// Boucle pour vérifier les lignes de stop-loss longues et les mettre à jour ou les supprimer
+if array.size(long_stop_loss_lines) > 0
+    i = array.size(long_stop_loss_lines) - 1
+    while (i >= 0)
+        fractal_info = array.get(long_stop_loss_lines, i)
+        fractal_info_tp = array.get(long_take_profit_lines, i)
+        if fractal_info.fractal_line.get_x2() > bar_index + max_line_length
+            line.delete(fractal_info.fractal_line)
+            array.remove(long_stop_loss_lines, i)
+            array.remove(long_take_profit_lines, i)
+            line.delete(fractal_info_tp.fractal_line)
+            in_long_position := false
+            long_label_close = label.new(x=bar_index, y=low, yloc=yloc.abovebar, text='', style=label.style_label_down, color=color.green, textcolor=color.white)
+            label.set_xy(long_label_close, bar_index, low)
+            Emoji_En_Gain = (close - entry_price) > 0 ? '✔️ ' : '❌ '
+            label.set_text(long_label_close, 'Fermeture\n' + str.tostring(math.round(close)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + Emoji_En_Gain + str.tostring(math.round(close - entry_price)))
+        else
+            if close < fractal_info.fractal_line.get_y2() or close > fractal_info_tp.fractal_line.get_y2()
+                if close < fractal_info.fractal_line.get_y2()
+                    cumulative_gains := cumulative_gains + (close - entry_price)  // Stop-loss atteint
+                else
+                    cumulative_gains := cumulative_gains + (take_profit_price - entry_price)  // Take-profit atteint
+                line.delete(fractal_info.fractal_line)
+                line.delete(fractal_info_tp.fractal_line)
+                array.remove(long_stop_loss_lines, i)
+                array.remove(long_take_profit_lines, i)
+                update_long_label := false  // Arrêter la mise à jour du label
+                in_long_position := false
+                long_label_close = label.new(x=bar_index, y=low, yloc=yloc.abovebar, text='', style=label.style_label_down, color=color.green, textcolor=color.white)
+                label.set_xy(long_label_close, bar_index, low)
+                Emoji_En_Gain = (close - entry_price) > 0 ? '✔️ ' : '❌ '
+                label.set_text(long_label_close, 'Fermeture\n' + str.tostring(math.round(close)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + Emoji_En_Gain + str.tostring(math.round(close - entry_price)))
+            else
+                if fractal_info.is_triggered and close > fractal_info.fractal_line.get_y1()
+                    future_bar_index = math.min(bar_index + 500, fractal_info.fractal_line.get_x1() + 500)
+                    fractal_info.fractal_line.set_x2(future_bar_index)
+                    fractal_info.is_triggered := false
+        i -= 1
+
+// Boucle pour vérifier les lignes de stop-loss courtes et les mettre à jour ou les supprimer
+if array.size(short_stop_loss_lines) > 0
+    i = array.size(short_stop_loss_lines) - 1
+    while (i >= 0)
+        fractal_info = array.get(short_stop_loss_lines, i)
+        fractal_info_tp = array.get(short_take_profit_lines, i)
+        if fractal_info.fractal_line.get_x2() > bar_index + max_line_length
+            line.delete(fractal_info.fractal_line)
+            array.remove(short_stop_loss_lines, i)
+            array.remove(short_take_profit_lines, i)
+            line.delete(fractal_info_tp.fractal_line)
+            in_short_position := false
+            short_label_close = label.new(x=bar_index, y=low, yloc=yloc.abovebar, text='', style=label.style_label_down, color=color.red, textcolor=color.white)
+            label.set_xy(short_label_close, bar_index, low)
+            Emoji_En_Gain = (entry_price - close) > 0 ? '✔️ ' : '❌ '
+            label.set_text(short_label_close, 'Fermeture\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + Emoji_En_Gain + str.tostring(math.round(entry_price - close)))
+        else
+            if high >= fractal_info.fractal_line.get_y2() or low <= fractal_info_tp.fractal_line.get_y2()
+                if high >= fractal_info.fractal_line.get_y2()
+                    cumulative_gains := cumulative_gains + (entry_price - close)  // Stop-loss atteint
+                else
+                    cumulative_gains := cumulative_gains + (entry_price - take_profit_price)  // Take-profit atteint
+                line.delete(fractal_info.fractal_line)
+                line.delete(fractal_info_tp.fractal_line)
+                array.remove(short_stop_loss_lines, i)
+                array.remove(short_take_profit_lines, i)
+                update_short_label := false  // Arrêter la mise à jour du label
+                in_short_position := false
+                Emoji_En_Gain = (entry_price - close) > 0 ? '✔️ ' : '❌ '
+                short_label_close = label.new(x=bar_index, y=low, yloc=yloc.abovebar, text='', style=label.style_label_down, color=color.red, textcolor=color.white)
+                label.set_xy(short_label_close, bar_index, low)
+                label.set_text(short_label_close, 'Fermeture\n' + str.tostring(math.round(entry_price)) + '\nSTOP-LOSS: ' + str.tostring(math.round(stop_loss_price)) + '\nTAKE PROFIT: ' + str.tostring(math.round(take_profit_price)) + '\nGains: ' + Emoji_En_Gain + str.tostring(math.round(entry_price - close)))
+            else
+                if fractal_info.is_triggered and close < fractal_info.fractal_line.get_y1()
+                    future_bar_index = math.min(bar_index + 500, fractal_info.fractal_line.get_x1() + 500)
+                    fractal_info.fractal_line.set_x2(future_bar_index)
+                    fractal_info.is_triggered := false
+        i -= 1
+
+is_bear_line_deleted := false
+is_bull_line_deleted := false
