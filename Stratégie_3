@@ -1,0 +1,254 @@
+//@version=5
+indicator(title="pw - luminorainvest ", shorttitle="pw - luminorainvest", precision=2, overlay = true)
+res = input.timeframe("", title="Indicator Timeframe")
+
+import TradingView/TechnicalRating/1 as rating
+
+adxlen = input(14, title="ADX Smoothing")
+dilen = input(14, title="DI Length")
+dirmov(len) =>
+	up = ta.change(high)
+	down = -ta.change(low)
+	plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+	minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+	truerange = ta.rma(ta.tr, len)
+	plus = fixnan(100 * ta.rma(plusDM, len) / truerange)
+	minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
+	[plus, minus]
+adx(dilen, adxlen) =>
+	[plus, minus] = dirmov(dilen)
+	sum = plus + minus
+	adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
+sig = adx(dilen, adxlen)
+
+StrongBound = 0.5
+WeakBound = 0.1
+[ratingTotalCurrent, ratingOtherCurrent, ratingMACurrent]  = request.security(syminfo.tickerid, res, rating.calcRatingAll())
+
+period = input.int(3, title = "period")
+
+fast_length = input.int(title="Fast Length", defval=12)
+slow_length = input.int(title="Slow Length", defval=26)
+signal_length = input.int(title="Signal Smoothing", minval=1, maxval=50, defval=9)
+rsi_length = input.int(title="RSI Length", defval=14)
+ema_rsi_length = input.int(title="EMA RSI Length", defval=9)
+
+src = close
+
+// MACD Calculation
+fast_ma = ta.ema(src, fast_length)
+slow_ma = ta.ema(src, slow_length)
+macd = fast_ma - slow_ma
+signal = ta.ema(macd, signal_length)
+
+// RSI Calculation
+rsi = ta.rsi(src, rsi_length)
+ema_rsi = ta.ema(rsi, ema_rsi_length)
+
+cond1  = (macd > signal) and (rsi > 50)
+cond2 =  (macd < signal) and (rsi < 50)
+cond3 = (rsi > ema_rsi)
+cond4 = (rsi < ema_rsi)
+
+// Bias Conditions
+bullish_bias =  cond1 and cond3 and ratingMACurrent > 0 and sig > 20
+bearish_bias =  cond2 and cond4 and ratingMACurrent < 0 and sig > 20
+
+BUY     = bullish_bias and ta.crossover(ratingMACurrent, 0) ?  true : false
+SELL    = bearish_bias and ta.crossunder(ratingMACurrent, 0) ? true : false
+
+BUY_SIGNAL = bullish_bias and ta.barssince(BUY) < period
+SELL_SIGNAL = bearish_bias and ta.barssince(SELL) < period
+
+barcolor(ratingMACurrent > 0  ? color.green : ratingMACurrent < 0 ? color.red : color.black)
+
+//Affichage candles
+plot(ta.sma(close,22), color = color.rgb(12, 245, 20))
+plot(ta.sma(close,50), color = color.green)
+plot(ta.sma(close,100), color = color.gray)
+plot(ta.sma(close,200), color = color.black)
+
+plotshape(
+	 BUY_SIGNAL ?  low : na,
+	 title="Achat",
+	 text="Achat",
+	 style=shape.labelup,
+	 location=location.belowbar,
+	 color=color.green,
+	 textcolor=color.black
+	 )
+
+plotshape(
+	 SELL_SIGNAL ?  high : na,
+	 title="vente",
+	 text="vente",
+	 style=shape.labeldown,
+	 location=location.abovebar,
+	 color=color.red,
+	 textcolor=color.black
+	 )
+
+
+
+plotshape(series=bearish_bias, location=location.abovebar, color=color.red, style=shape.triangledown, title="bearish_bias", size = size.tiny)
+plotshape(series=bullish_bias, location=location.belowbar, color=color.green, style=shape.triangleup, title="bullish_bias", size = size.tiny)
+
+// Définir "n" comme le nombre de périodes avec une valeur minimum de 2 pour la gestion des erreurs.
+n = input.int(title="Periods", defval=9, minval=2, maxval=100)  // Ajuster maxval pour éviter les grands lookbacks
+// Paramètres
+maxBars = input.int(500, 'Max Line Length', minval=1, maxval=4500, group='Filter')
+lBull = input.color(#089981, 'Bull', inline='bull', group='Style')
+cBull = input.color(#089981bb, '', inline='bull', group='Style')
+bBull = input.color(#08998125, '', inline='bull', group='Style', tooltip='Color {Line - Dot - Candle}')
+lBear = input.color(#f23645, 'Bear', inline='bear', group='Style')
+cBear = input.color(#f23645bb, '', inline='bear', group='Style')
+bBear = input.color(#f2364525, '', inline='bear', group='Style', tooltip='Color {Line - Dot - Candle}')
+LabelSize = input.string('Small', 'Dot Size', options=['Tiny', 'Small', 'Normal', 'Large'])
+LbSize = LabelSize == 'Tiny' ? 3 : LabelSize == 'Small' ? 4 : LabelSize == 'Normal' ? 5 : 6
+LabelSize := str.lower(LabelSize)
+// Définir le type sr
+type sr
+    line ln
+    bool tg
+    int bx
+
+var linesBull = array.new<sr>()
+var linesBear = array.new<sr>()
+
+var bool bullLineDeleted = false
+var bool bearLineDeleted = false
+
+var float pBull = na
+var float pBear = na
+
+bool tBull = false
+bool tBear = false
+
+bool eBull = false
+bool eBear = false
+
+INV = color(na)
+barIndex = bar_index
+
+// UpFractal
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+
+upFractal = (upflagDownFrontier and flagUpFrontier)
+
+// downFractal
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+
+downFractal = (downflagDownFrontier and flagDownFrontier)
+
+// Appliquer les niveaux de Fibonacci lors de l'apparition des fractals
+var float lastHigh = na
+var float lastLow = na
+
+var float fib_0_786 = na
+var float fib_1_0 = na
+var float fib_1_272 = na
+var float fib_1_414 = na
+
+if upFractal
+    lastHigh := high[n]
+    lastLow := ta.lowest(low, n)
+    fib_0_786 := lastLow + (lastHigh - lastLow) * 0.786
+    fib_1_0 := lastLow + (lastHigh - lastLow)
+    fib_1_272 := lastLow + (lastHigh - lastLow) * 1.272
+    fib_1_414 := lastLow + (lastHigh - lastLow) * 1.414
+
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_0, x2=bar_index + 1, y2=fib_1_0, color=color.red, width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_0_786, x2=bar_index + 1, y2=fib_0_786, color=color.rgb(255,130,130), width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_272, x2=bar_index + 1, y2=fib_1_272, color=color.rgb(255,82,82), width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_414, x2=bar_index + 1, y2=fib_1_414, color=color.rgb(255,0,0), width=1), true, bar_index))
+
+if downFractal
+    lastLow := low[n]
+    lastHigh := ta.highest(high, n)
+    fib_0_786 := lastHigh - (lastHigh - lastLow) * 0.786
+    fib_1_272 := lastHigh - (lastHigh - lastLow) * 1.272
+    fib_1_414 := lastHigh - (lastHigh - lastLow) * 1.414
+
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_0_786, x2=bar_index + 1, y2=fib_0_786, color=color.green, width=1), true, bar_index))
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_1_272, x2=bar_index + 1, y2=fib_1_272, color=color.rgb(130,255,130), width=1), true, bar_index))
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_1_414, x2=bar_index + 1, y2=fib_1_414, color=color.rgb(0,255,0), width=1), true, bar_index))
+
+// Initialiser les variables pour la coloration des bougies
+var color candleColor = na
+
+/// Vérifier si le prix traverse l'un des niveaux de Fibonacci et mettre à jour les lignes
+if array.size(linesBear) > 0
+    i = 0
+    while (i < array.size(linesBear))
+        lineObj = array.get(linesBear, i)
+        // Vérifier si la coordonnée x2 de la ligne dépasse maxBars
+        if lineObj.ln.get_x2() > bar_index + maxBars
+            line.delete(lineObj.ln)
+            array.remove(linesBear, i)
+        else
+            // Vérifier si le prix traverse le niveau x2 et supprimer la ligne si c'est le cas
+            if close < lineObj.ln.get_y2()
+                line.delete(lineObj.ln)
+                array.remove(linesBear, i)
+                bearLineDeleted := true
+            else
+                // Mettre à jour la coordonnée x2 de la ligne si certaines conditions sont remplies
+                if lineObj.tg and close > lineObj.ln.get_y1()
+                    // Assurer que x2 est dans la plage autorisée de 500 barres dans le futur
+                    future_bar_index = math.min(bar_index + 500, lineObj.ln.get_x1() + 500)
+                    lineObj.ln.set_x2(future_bar_index)
+                    lineObj.tg := false
+                i := i + 1
+
+if array.size(linesBull) > 0
+    i = 0
+    while (i < array.size(linesBull))
+        lineObj = array.get(linesBull, i)
+        // Vérifier si la coordonnée x2 de la ligne dépasse maxBars
+        if lineObj.ln.get_x2() > bar_index + maxBars
+            line.delete(lineObj.ln)
+            array.remove(linesBull, i)
+        else
+            // Vérifier si le prix traverse le niveau x2 et supprimer la ligne si c'est le cas
+            if close > lineObj.ln.get_y2()
+                line.delete(lineObj.ln)
+                array.remove(linesBull, i)
+                bullLineDeleted := true
+            else
+                // Mettre à jour la coordonnée x2 de la ligne si certaines conditions sont remplies
+                if lineObj.tg and close < lineObj.ln.get_y1()
+                    // Assurer que x2 est dans la plage autorisée de 500 barres dans le futur
+                    future_bar_index = math.min(bar_index + 500, lineObj.ln.get_x1() + 500)
+                    lineObj.ln.set_x2(future_bar_index)
+                    lineObj.tg := false
+                i := i + 1
+
+
