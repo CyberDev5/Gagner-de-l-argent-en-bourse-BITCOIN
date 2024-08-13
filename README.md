@@ -31,6 +31,10 @@ voici une autre stratégie que j'ai crée :
 ![image](https://github.com/user-attachments/assets/9f4713d4-8f75-40e4-a702-71b343ea7aa6)
 le code dans mon repository
 
+Stratégie n°3 :
+
+![image](https://github.com/user-attachments/assets/8c6a9390-d2ca-4eae-9895-a98f529de5f4)
+
 
 
 
