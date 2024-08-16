@@ -1,49 +1,79 @@
 //@version=5
 indicator(title="pw - luminorainvest ", shorttitle="pw - luminorainvest", precision=2, overlay = true)
-res = input.timeframe("", title="Indicator Timeframe")
+res = input.timeframe("", title="UT")
+src = input.source(close,"Prix", tooltip ='Prix en clôture par défaut')
+latence = input.int(1, title ="Latence", tooltip ='Nbre de bougies pour lesquelles un signal d’achat ou de vente reste affiché tant que les conditions sont réunies')
 
 import TradingView/TechnicalRating/1 as rating
 
-adxlen = input(14, title="ADX Smoothing")
-dilen = input(14, title="DI Length")
+// ADX & DI settings
+adxlen = input(14, title="ADX Smoothing", group="ADX & DI")
+dilen = input(14, title="DI Length", group="ADX & DI")
 dirmov(len) =>
-	up = ta.change(high)
-	down = -ta.change(low)
-	plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
-	minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
-	truerange = ta.rma(ta.tr, len)
-	plus = fixnan(100 * ta.rma(plusDM, len) / truerange)
-	minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
-	[plus, minus]
+    up = ta.change(high)
+    down = -ta.change(low)
+    plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+    minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+    truerange = ta.rma(ta.tr, len)
+    plus = fixnan(100 * ta.rma(plusDM, len) / truerange)
+    minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
+    [plus, minus]
 adx(dilen, adxlen) =>
-	[plus, minus] = dirmov(dilen)
-	sum = plus + minus
-	adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
+    [plus, minus] = dirmov(dilen)
+    sum = plus + minus
+    adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
 sig = adx(dilen, adxlen)
 
 StrongBound = 0.5
 WeakBound = 0.1
 [ratingTotalCurrent, ratingOtherCurrent, ratingMACurrent]  = request.security(syminfo.tickerid, res, rating.calcRatingAll())
 
-period = input.int(3, title = "period")
+// MACD settings
+useZRAlgo = input(true, title="MACD Zéro Retard", group="MACD", tooltip ='La MACD ZR donne des signaux plus précoces. Cependant comme elle réagit plus rapidement aux changements de cours, le risque d\’obtenir des faux signaux est plus important. Cette variante a été développée par Patrick Mulloy et présentée dans son livre Stocks & Commodities en 1994.') 
+fast_length = input.int(12, title="Période courte (Ct)", group="MACD", tooltip ='période Ct des cours de clôture')
+slow_length = input.int(26, title="Période longue (Lt)", group="MACD", tooltip ='période Lt des cours de clôture')
+signal_length = input.int(9, title="Période du Signal", minval=1, maxval=50, group="MACD", tooltip ='Période du Trigger')
+useSma = input(false, title="Utiliser des moyennes mobiles simples (SMA)", group="MACD", tooltip ='Des moyennes mobiles exponentielles (EMA) sont utilisées par défaut')
 
-fast_length = input.int(title="Fast Length", defval=12)
-slow_length = input.int(title="Slow Length", defval=26)
-signal_length = input.int(title="Signal Smoothing", minval=1, maxval=50, defval=9)
-rsi_length = input.int(title="RSI Length", defval=14)
-ema_rsi_length = input.int(title="EMA RSI Length", defval=9)
+// RSI settings
+ma(source, length, type) =>
+    switch type
+        "SMA" => ta.sma(source, length)
+        "BB Magique" => ta.bbw(source, length, 2.8)
+        "EMA" => ta.ema(source, length)
+        "SMMA (RMA)" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.vwma(source, length)
 
-src = close
+maTypeInput = input.string("WMA", title="Type de MA", options=["SMA", "BB magiques", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group="RSI", tooltip ='Moyenne mobile pour le RSI')
+
+rsiLengthInput = input.int(14, title="Longueur de MA", group="RSI", tooltip ='Longueur par défaut : 14. Indiquer 160 si les BB Magiques sont sélectionnées.')
 
 // MACD Calculation
-fast_ma = ta.ema(src, fast_length)
-slow_ma = ta.ema(src, slow_length)
-macd = fast_ma - slow_ma
-signal = ta.ema(macd, signal_length)
+// Fast line
+ma1= useSma ?  ta.sma(src, fast_length) :  ta.ema(src, fast_length)
+ma2 = useSma ?  ta.sma(ma1, fast_length) :  ta.ema(ma1, fast_length) 
+ZReMA = ((2 * ma1) - ma2)
+STDeMA = ta.ema(src, fast_length)
+// Slow line
+mas1=  useSma ? ta.sma(src, slow_length) :  ta.ema(src, slow_length)
+mas2 = useSma ?  ta.sma(mas1, fast_length) :  ta.ema(mas1, fast_length) 
+ZRsMA = ((2 * mas1) - mas2)
+STDsMA = ta.ema(src, slow_length)
+// MACD line
+macdZR = ZReMA - ZRsMA
+macdSTD = STDeMA - STDsMA
+macd = useZRAlgo ? macdZR : macdSTD
+// Signal line
+ZRsig1 = ta.ema(macdZR, signal_length)
+ZRsig2 = ta.ema(ZRsig1, signal_length)
+signal = useZRAlgo ? (2 * ZRsig1) - ZRsig2 : ta.ema(macdSTD, signal_length)
 
 // RSI Calculation
-rsi = ta.rsi(src, rsi_length)
-ema_rsi = ta.ema(rsi, ema_rsi_length)
+up = ta.rma(math.max(ta.change(src), 0), rsiLengthInput)
+down2 = ta.rma(-math.min(ta.change(src), 0), rsiLengthInput)
+rsi = down2 == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down2))
+ema_rsi = ma(rsi, rsiLengthInput, maTypeInput)
 
 cond1  = (macd > signal) and (rsi > 50)
 cond2 =  (macd < signal) and (rsi < 50)
@@ -57,53 +87,54 @@ bearish_bias =  cond2 and cond4 and ratingMACurrent < 0 and sig > 20
 BUY     = bullish_bias and ta.crossover(ratingMACurrent, 0) ?  true : false
 SELL    = bearish_bias and ta.crossunder(ratingMACurrent, 0) ? true : false
 
-BUY_SIGNAL = bullish_bias and ta.barssince(BUY) < period
-SELL_SIGNAL = bearish_bias and ta.barssince(SELL) < period
+BUY_SIGNAL = bullish_bias and ta.barssince(BUY) < latence
+SELL_SIGNAL = bearish_bias and ta.barssince(SELL) < latence
 
 barcolor(ratingMACurrent > 0  ? color.green : ratingMACurrent < 0 ? color.red : color.black)
 
-//Affichage candles
+//Affichage des bougies
 plot(ta.sma(close,22), color = color.rgb(12, 245, 20))
 plot(ta.sma(close,50), color = color.green)
 plot(ta.sma(close,100), color = color.gray)
 plot(ta.sma(close,200), color = color.black)
 
 plotshape(
-	 BUY_SIGNAL ?  low : na,
-	 title="Achat",
-	 text="Achat",
-	 style=shape.labelup,
-	 location=location.belowbar,
-	 color=color.green,
-	 textcolor=color.black
-	 )
+     BUY_SIGNAL ?  low : na,
+     title="LONG",
+     text="LONG",
+     style=shape.labelup,
+     location=location.belowbar,
+     color=color.green,
+     textcolor=color.black
+     )
 
 plotshape(
-	 SELL_SIGNAL ?  high : na,
-	 title="vente",
-	 text="vente",
-	 style=shape.labeldown,
-	 location=location.abovebar,
-	 color=color.red,
-	 textcolor=color.black
-	 )
-
-
+     SELL_SIGNAL ?  high : na,
+     title="SHORT",
+     text="SHORT",
+     style=shape.labeldown,
+     location=location.abovebar,
+     color=color.red,
+     textcolor=color.black
+     )
 
 plotshape(series=bearish_bias, location=location.abovebar, color=color.red, style=shape.triangledown, title="bearish_bias", size = size.tiny)
 plotshape(series=bullish_bias, location=location.belowbar, color=color.green, style=shape.triangleup, title="bullish_bias", size = size.tiny)
 
-// Définir "n" comme le nombre de périodes avec une valeur minimum de 2 pour la gestion des erreurs.
-n = input.int(title="Periods", defval=9, minval=2, maxval=100)  // Ajuster maxval pour éviter les grands lookbacks
+// Niveaux de Fibonacci
+// Définir "n" comme l’historique des bougies avec une valeur minimum de 2 pour la gestion des erreurs.
+n = input.int(9, title="Historique", defval=9, minval=2, maxval=100, group='Niveaux de Fibonacci', tooltip ='Historique de bougies pour déterminer les niveaux (de 2 à 100 max)')
+// Ajuster maxval pour éviter les grands lookbacks
+
 // Paramètres
-maxBars = input.int(500, 'Max Line Length', minval=1, maxval=4500, group='Filter')
+maxBars = input.int(500, 'Max Line Length', minval=1, maxval=4500, group='Filtre')
 lBull = input.color(#089981, 'Bull', inline='bull', group='Style')
 cBull = input.color(#089981bb, '', inline='bull', group='Style')
 bBull = input.color(#08998125, '', inline='bull', group='Style', tooltip='Color {Line - Dot - Candle}')
 lBear = input.color(#f23645, 'Bear', inline='bear', group='Style')
 cBear = input.color(#f23645bb, '', inline='bear', group='Style')
 bBear = input.color(#f2364525, '', inline='bear', group='Style', tooltip='Color {Line - Dot - Candle}')
-LabelSize = input.string('Small', 'Dot Size', options=['Tiny', 'Small', 'Normal', 'Large'])
+LabelSize = input.string('Small', 'Taille des plots', options=['Tiny', 'Small', 'Normal', 'Large'])
 LbSize = LabelSize == 'Tiny' ? 3 : LabelSize == 'Small' ? 4 : LabelSize == 'Normal' ? 5 : 6
 LabelSize := str.lower(LabelSize)
 // Définir le type sr
@@ -250,5 +281,3 @@ if array.size(linesBull) > 0
                     lineObj.ln.set_x2(future_bar_index)
                     lineObj.tg := false
                 i := i + 1
-
-
