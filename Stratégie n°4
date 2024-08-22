@@ -1,0 +1,414 @@
+//@version=5
+indicator(title="pierre wacquez - luminorainvest ", shorttitle="pierre wacquez - luminorainvest", precision=2, overlay = true)
+res = input.timeframe("", title="UT")
+latence = input.int(1, title ="Latence", tooltip ='Nbre de bougies pour lesquelles un signal d’achat ou de vente reste affiché tant que les conditions sont réunies')
+src = input.source(defval = ohlc4)
+
+// Fonction pour calculer la KAMA
+calcKAMA(src, length) =>
+    efficiencyRatio = math.abs(src - src[length]) / math.sum(math.abs(src - src[1]), length)
+    fastest = 2.0 / (2.0 + 1.0)
+    slowest = 2.0 / (30.0 + 1.0)
+    smoothingConstant = math.pow(efficiencyRatio * (fastest - slowest) + slowest, 2)
+    
+    var float kamaPrev = na
+    kamaPrev := na(kamaPrev) ? src : kamaPrev + smoothingConstant * (src - kamaPrev)
+    kamaPrev
+
+// Autres fonctions de moyenne mobile
+hullma(src, length) =>
+    ta.wma(2*ta.wma(src, length/2)-ta.wma(src, length), math.floor(math.sqrt(length)))
+
+LastSQuare(src, length) =>
+    ta.linreg(src, length, 0)
+
+tema(series, length) =>
+    if length > 0
+        ema1 = ta.ema(series, length)
+        ema2 = ta.ema(ema1, length)
+        ema3 = ta.ema(ema2, length)
+        (3 * ema1) - (3 * ema2) + ema3
+    else
+        na
+
+// Calcul de la note de moyenne mobile
+calcRatingMA(series float ma, series float src) =>
+    float result = math.sign(src - ma)
+
+// Fonction principale pour calculer la note finale
+calcRatingMA() =>
+    var array<float> indRatings = array.new<float>()
+    array.clear(indRatings) 
+
+    array.push(indRatings, calcRatingMA(ta.wma(close , 9), close))
+    array.push(indRatings, calcRatingMA(ta.wma(close , 13), close))
+    array.push(indRatings, calcRatingMA(ta.wma(close , 20), close))
+    array.push(indRatings, calcRatingMA(ta.wma(close , 50), close))
+    array.push(indRatings, calcRatingMA(ta.wma(close , 100), close))
+
+    array.push(indRatings, calcRatingMA(calcKAMA(close , 9), close))
+    array.push(indRatings, calcRatingMA(calcKAMA(close , 13), close))
+    array.push(indRatings, calcRatingMA(calcKAMA(close , 20), close))
+    array.push(indRatings, calcRatingMA(calcKAMA(close , 50), close))
+    array.push(indRatings, calcRatingMA(calcKAMA(close , 100), close))
+
+    array.push(indRatings, calcRatingMA(tema(close , 9), close))
+    array.push(indRatings, calcRatingMA(tema(close , 13), close))
+    array.push(indRatings, calcRatingMA(tema(close , 20), close))
+    array.push(indRatings, calcRatingMA(tema(close , 50), close))
+    array.push(indRatings, calcRatingMA(tema(close , 100), close))
+
+    array.push(indRatings, calcRatingMA(ta.vwma(close ,  9), close))
+    array.push(indRatings, calcRatingMA(ta.vwma(close ,  13), close))
+    array.push(indRatings, calcRatingMA(ta.vwma(close ,  20), close))  
+    array.push(indRatings, calcRatingMA(ta.vwma(close ,  50), close))
+    array.push(indRatings, calcRatingMA(ta.vwma(close , 100), close))
+
+    array.push(indRatings, calcRatingMA(ta.ema(close ,  9), close))
+    array.push(indRatings, calcRatingMA(ta.ema(close ,  13), close)) 
+    array.push(indRatings, calcRatingMA(ta.ema(close ,  20), close))
+    array.push(indRatings, calcRatingMA(ta.ema(close ,  50), close))    
+    array.push(indRatings, calcRatingMA(ta.ema(close , 100), close))
+    
+    array.push(indRatings, calcRatingMA(ta.sma(close ,  9), close))
+    array.push(indRatings, calcRatingMA(ta.sma(close ,  13), close)) 
+    array.push(indRatings, calcRatingMA(ta.sma(close ,  30), close))
+    array.push(indRatings, calcRatingMA(ta.sma(close ,  50), close))    
+    array.push(indRatings, calcRatingMA(ta.sma(close , 100), close))
+
+    array.push(indRatings, calcRatingMA(hullma(close, 9), close))
+    array.push(indRatings, calcRatingMA(hullma(close, 13), close)) 
+    array.push(indRatings, calcRatingMA(hullma(close, 20), close))
+    array.push(indRatings, calcRatingMA(hullma(close, 50), close))    
+    array.push(indRatings, calcRatingMA(hullma(close, 100), close))
+
+    array.push(indRatings, calcRatingMA(LastSQuare(close, 9), close))
+    array.push(indRatings, calcRatingMA(LastSQuare(close, 13), close)) 
+    array.push(indRatings, calcRatingMA(LastSQuare(close, 20), close))
+    array.push(indRatings, calcRatingMA(LastSQuare(close, 50), close))    
+    array.push(indRatings, calcRatingMA(LastSQuare(close, 100), close))
+
+    array.push(indRatings, calcRatingMA(ta.linreg(close , 9,0 ), close))
+    array.push(indRatings, calcRatingMA(ta.linreg(close , 13,0 ), close))
+    array.push(indRatings, calcRatingMA(ta.linreg(close , 20,0 ), close))
+    array.push(indRatings, calcRatingMA(ta.linreg(close , 50,0 ), close))
+    array.push(indRatings, calcRatingMA(ta.linreg(close , 100,0 ), close))
+
+    float ratingMA = array.avg(indRatings)
+    array.clear(indRatings)
+    ratingMA
+
+
+// Exemple : Vous pouvez utiliser la volatilité de Parkinson pour ajuster d'autres calculs
+// Par exemple, l'ajouter dans un indicateur ou pour filtrer des signaux
+
+
+
+// Appel de la fonction refactorisée
+trend1 = request.security(syminfo.ticker, "1", calcRatingMA())
+trend2 = request.security(syminfo.ticker, "5", calcRatingMA())
+trend3 = request.security(syminfo.ticker, "15", calcRatingMA())
+trend4 = request.security(syminfo.ticker, "30", calcRatingMA())
+trend5 = request.security(syminfo.ticker, "60", calcRatingMA())
+trend6 = request.security(syminfo.ticker, "240", calcRatingMA())
+trend7 = request.security(syminfo.ticker, "1D", calcRatingMA())
+trend8 = request.security(syminfo.ticker, "1W", calcRatingMA())
+
+
+ratingMACurrent = (trend1+trend2+trend3+trend4+trend5+trend6+trend7+trend8)/8
+
+// ADX & DI settings
+adxlen = input(14, title="ADX Smoothing", group="ADX & DI")
+dilen = input(14, title="DI Length", group="ADX & DI")
+dirmov(len) =>
+    up = ta.change(high)
+    down = -ta.change(low)
+    plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+    minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+    truerange = ta.rma(ta.tr, len)
+    plus = fixnan(100 * ta.rma(plusDM, len) / truerange)
+    minus = fixnan(100 * ta.rma(minusDM, len) / truerange)
+    [plus, minus]
+adx(dilen, adxlen) =>
+    [plus, minus] = dirmov(dilen)
+    sum = plus + minus
+    adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
+sig = adx(dilen, adxlen)
+
+pivotHigh = ta.pivothigh(high, 5, 5)
+pivotLow = ta.pivotlow(low, 5, 5)
+
+// Calcul du pivot
+dailyPivot = request.security(syminfo.tickerid, "D", (high + low + close) / 3)
+
+// Condition pour Bullish ou Bearish
+bullish = close > dailyPivot
+bearish = close <= dailyPivot
+
+// Bias Conditions
+bullish_bias =  ratingMACurrent > 0 and ta.linreg(ratingMACurrent, 9,0) > 0 and bullish
+bearish_bias =  ratingMACurrent < 0 and ta.linreg(ratingMACurrent, 9,0) < 0 and bearish
+
+barcolor(bullish_bias  ? color.green : bearish_bias ? color.red : ratingMACurrent > 0.5 or ratingMACurrent < -0.5 ? color.orange : color.black)
+
+//Affichage des bougies
+plot(ta.sma(close,22), color = color.rgb(12, 245, 20))
+plot(ta.sma(close,50), color = color.green)
+plot(ta.sma(close,100), color = color.gray)
+plot(ta.sma(close,200), color = color.black)
+
+plotshape(series=bearish_bias, location=location.abovebar, color=color.red, style=shape.triangledown, title="bearish_bias", size = size.tiny)
+plotshape(series=bullish_bias, location=location.belowbar, color=color.green, style=shape.triangleup, title="bullish_bias", size = size.tiny)
+
+// Niveaux de Fibonacci
+// Définir "n" comme l’historique des bougies avec une valeur minimum de 2 pour la gestion des erreurs.
+n = input.int(9, title="Historique", defval=9, minval=2, maxval=100, group='Niveaux de Fibonacci', tooltip ='Historique de bougies pour déterminer les niveaux (de 2 à 100 max)')
+// Ajuster maxval pour éviter les grands lookbacks
+
+// Paramètres
+maxBars = input.int(500, 'Max Line Length', minval=1, maxval=4500, group='Filtre')
+lBull = input.color(#089981, 'Bull', inline='bull', group='Style')
+cBull = input.color(#089981bb, '', inline='bull', group='Style')
+bBull = input.color(#08998125, '', inline='bull', group='Style', tooltip='Color {Line - Dot - Candle}')
+lBear = input.color(#f23645, 'Bear', inline='bear', group='Style')
+cBear = input.color(#f23645bb, '', inline='bear', group='Style')
+bBear = input.color(#f2364525, '', inline='bear', group='Style', tooltip='Color {Line - Dot - Candle}')
+LabelSize = input.string('Small', 'Taille des plots', options=['Tiny', 'Small', 'Normal', 'Large'])
+LbSize = LabelSize == 'Tiny' ? 3 : LabelSize == 'Small' ? 4 : LabelSize == 'Normal' ? 5 : 6
+LabelSize := str.lower(LabelSize)
+// Définir le type sr
+type sr
+    line ln
+    bool tg
+    int bx
+
+var linesBull = array.new<sr>()
+var linesBear = array.new<sr>()
+
+var bool bullLineDeleted = false
+var bool bearLineDeleted = false
+
+var float pBull = na
+var float pBear = na
+
+bool tBull = false
+bool tBear = false
+
+bool eBull = false
+bool eBear = false
+
+INV = color(na)
+barIndex = bar_index
+
+// UpFractal
+bool upflagDownFrontier = true
+bool upflagUpFrontier0 = true
+bool upflagUpFrontier1 = true
+bool upflagUpFrontier2 = true
+bool upflagUpFrontier3 = true
+bool upflagUpFrontier4 = true
+
+for i = 1 to n
+    upflagDownFrontier := upflagDownFrontier and (high[n-i] < high[n])
+    upflagUpFrontier0 := upflagUpFrontier0 and (high[n+i] < high[n])
+    upflagUpFrontier1 := upflagUpFrontier1 and (high[n+1] <= high[n] and high[n+i + 1] < high[n])
+    upflagUpFrontier2 := upflagUpFrontier2 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+i + 2] < high[n])
+    upflagUpFrontier3 := upflagUpFrontier3 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+i + 3] < high[n])
+    upflagUpFrontier4 := upflagUpFrontier4 and (high[n+1] <= high[n] and high[n+2] <= high[n] and high[n+3] <= high[n] and high[n+4] <= high[n] and high[n+i + 4] < high[n])
+flagUpFrontier = upflagUpFrontier0 or upflagUpFrontier1 or upflagUpFrontier2 or upflagUpFrontier3 or upflagUpFrontier4
+
+upFractal = (upflagDownFrontier and flagUpFrontier)
+
+// downFractal
+bool downflagDownFrontier = true
+bool downflagUpFrontier0 = true
+bool downflagUpFrontier1 = true
+bool downflagUpFrontier2 = true
+bool downflagUpFrontier3 = true
+bool downflagUpFrontier4 = true
+
+for i = 1 to n
+    downflagDownFrontier := downflagDownFrontier and (low[n-i] > low[n])
+    downflagUpFrontier0 := downflagUpFrontier0 and (low[n+i] > low[n])
+    downflagUpFrontier1 := downflagUpFrontier1 and (low[n+1] >= low[n] and low[n+i + 1] > low[n])
+    downflagUpFrontier2 := downflagUpFrontier2 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+i + 2] > low[n])
+    downflagUpFrontier3 := downflagUpFrontier3 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+i + 3] > low[n])
+    downflagUpFrontier4 := downflagUpFrontier4 and (low[n+1] >= low[n] and low[n+2] >= low[n] and low[n+3] >= low[n] and low[n+4] >= low[n] and low[n+i + 4] > low[n])
+flagDownFrontier = downflagUpFrontier0 or downflagUpFrontier1 or downflagUpFrontier2 or downflagUpFrontier3 or downflagUpFrontier4
+
+downFractal = (downflagDownFrontier and flagDownFrontier)
+
+// Appliquer les niveaux de Fibonacci lors de l'apparition des fractals
+var float lastHigh = na
+var float lastLow = na
+
+var float fib_0_786 = na
+var float fib_1_0 = na
+var float fib_1_272 = na
+var float fib_1_414 = na
+
+if upFractal
+    lastHigh := high[n]
+    lastLow := ta.lowest(low, n)
+    fib_0_786 := lastLow + (lastHigh - lastLow) * 0.786
+    fib_1_0 := lastLow + (lastHigh - lastLow)
+    fib_1_272 := lastLow + (lastHigh - lastLow) * 1.272
+    fib_1_414 := lastLow + (lastHigh - lastLow) * 1.414
+
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_0, x2=bar_index + 1, y2=fib_1_0, color=color.red, width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_0_786, x2=bar_index + 1, y2=fib_0_786, color=color.rgb(255,130,130), width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_272, x2=bar_index + 1, y2=fib_1_272, color=color.rgb(255,82,82), width=1), true, bar_index))
+    array.push(linesBull, sr.new(line.new(x1=bar_index-n, y1=fib_1_414, x2=bar_index + 1, y2=fib_1_414, color=color.rgb(255,0,0), width=1), true, bar_index))
+
+if downFractal
+    lastLow := low[n]
+    lastHigh := ta.highest(high, n)
+    fib_0_786 := lastHigh - (lastHigh - lastLow) * 0.786
+    fib_1_272 := lastHigh - (lastHigh - lastLow) * 1.272
+    fib_1_414 := lastHigh - (lastHigh - lastLow) * 1.414
+
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_0_786, x2=bar_index + 1, y2=fib_0_786, color=color.green, width=1), true, bar_index))
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_1_272, x2=bar_index + 1, y2=fib_1_272, color=color.rgb(130,255,130), width=1), true, bar_index))
+    array.push(linesBear, sr.new(line.new(x1=bar_index-n, y1=fib_1_414, x2=bar_index + 1, y2=fib_1_414, color=color.rgb(0,255,0), width=1), true, bar_index))
+
+// Initialiser les variables pour la coloration des bougies
+var color candleColor = na
+
+/// Vérifier si le prix traverse l'un des niveaux de Fibonacci et mettre à jour les lignes
+if array.size(linesBear) > 0
+    i = 0
+    while (i < array.size(linesBear))
+        lineObj = array.get(linesBear, i)
+        // Vérifier si la coordonnée x2 de la ligne dépasse maxBars
+        if lineObj.ln.get_x2() > bar_index + maxBars
+            line.delete(lineObj.ln)
+            array.remove(linesBear, i)
+        else
+            // Vérifier si le prix traverse le niveau x2 et supprimer la ligne si c'est le cas
+            if close < lineObj.ln.get_y2()
+                line.delete(lineObj.ln)
+                array.remove(linesBear, i)
+                bearLineDeleted := true
+            else
+                // Mettre à jour la coordonnée x2 de la ligne si certaines conditions sont remplies
+                if lineObj.tg and close > lineObj.ln.get_y1()
+                    // Assurer que x2 est dans la plage autorisée de 500 barres dans le futur
+                    future_bar_index = math.min(bar_index + 500, lineObj.ln.get_x1() + 500)
+                    lineObj.ln.set_x2(future_bar_index)
+                    lineObj.tg := false
+                i := i + 1
+
+if array.size(linesBull) > 0
+    i = 0
+    while (i < array.size(linesBull))
+        lineObj = array.get(linesBull, i)
+        // Vérifier si la coordonnée x2 de la ligne dépasse maxBars
+        if lineObj.ln.get_x2() > bar_index + maxBars
+            line.delete(lineObj.ln)
+            array.remove(linesBull, i)
+        else
+            // Vérifier si le prix traverse le niveau x2 et supprimer la ligne si c'est le cas
+            if close > lineObj.ln.get_y2()
+                line.delete(lineObj.ln)
+                array.remove(linesBull, i)
+                bullLineDeleted := true
+            else
+                // Mettre à jour la coordonnée x2 de la ligne si certaines conditions sont remplies
+                if lineObj.tg and close < lineObj.ln.get_y1()
+                    // Assurer que x2 est dans la plage autorisée de 500 barres dans le futur
+                    future_bar_index = math.min(bar_index + 500, lineObj.ln.get_x1() + 500)
+                    lineObj.ln.set_x2(future_bar_index)
+                    lineObj.tg := false
+                i := i + 1
+
+
+normalized_price = (close - ta.lowest(close, 14)) / (ta.highest(close, 14) - ta.lowest(close, 14))
+
+bullish_w = normalized_price > 0 and normalized_price < 0.5 and normalized_price[1] == 0 and normalized_price[2] > 0 and normalized_price[3] == 0 and normalized_price[4] > 0 and close < high[1]
+bearish_m = normalized_price < 1 and normalized_price > 0.5 and normalized_price[1] == 1 and normalized_price[2] < 1 and normalized_price[3] == 1 and normalized_price[4] < 1 and close > low[1]
+
+
+plotshape(
+	 bullish_w ?  close : na,
+	 title="bull",
+	 text="Double bottom",
+	 style=shape.labelup,
+	 location=location.belowbar,
+	 color=color.green,
+	 textcolor=color.black,
+	 size=size.tiny
+	 )
+
+plotshape(
+	 bearish_m ? close : na,
+	 title="bear",
+	 text="Double Top",
+	 style=shape.labeldown,
+	 location=location.abovebar,
+	 color=color.red,
+	 textcolor=color.white,
+	 size=size.tiny
+	 )
+
+
+// ========================================
+//         9 - Ajout d'un indicateur d'écart à la volatilité basée cette fois-ci sur l'ATR
+// ========================================
+
+// Configurations des probabilités
+hps = input(true, title="High Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de haute probabilité
+mps = input(false, title="Mid Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de probabilité moyenne
+lps = input(false, title="Low Probability Setup")  // Demande à l'utilisateur s'il souhaite activer la configuration de basse probabilité
+
+len1 = 7     // 
+len2 = 14    // 
+len3 = 21    //
+
+// Moyenne Mobile (Point Milieu de la Juste Valeur)
+ma11 = ta.sma(ohlc4, len1)  // Calcule la moyenne mobile de la période len1
+ma22 = ta.sma(ohlc4, len2)  // Calcule la moyenne mobile de la période len2
+ma33 = ta.sma(ohlc4, len3)  // Calcule la moyenne mobile de la période len3
+
+// ATR (Unités de Volatilité Dynamiques)
+rng1 = ta.sma(ta.tr(na), len1)  // Calcule l'Average True Range (ATR) pour la période len1
+rng2 = ta.sma(ta.tr(na), len2)  // Calcule l'Average True Range (ATR) pour la période len2
+rng3 = ta.sma(ta.tr(na), len3)  // Calcule l'Average True Range (ATR) pour la période len3
+
+// Déviation ATR ou Sauce Secrète du Promoteur
+up1 = ma11 + rng1 * 1.6  // Détermine la limite supérieure pour le premier ensemble de probabilités
+up2 = ma22 + rng2 * 2.4  // Détermine la limite supérieure pour le deuxième ensemble de probabilités
+up3 = ma22 + rng3 * 3.2  // Détermine la limite supérieure pour le troisième ensemble de probabilités
+
+dn1 = ma11 - rng1 * 1.6  // Détermine la limite inférieure pour le premier ensemble de probabilités
+dn2 = ma22 - rng2 * 2.4  // Détermine la limite inférieure pour le deuxième ensemble de probabilités
+dn3 = ma22 - rng2 * 3.2  // Détermine la limite inférieure pour le troisième ensemble de probabilités
+
+// Configuration de Trade à Faible Probabilité
+ERhigh1 = high > up1 ? 1 : 0  // Détermine si le prix élevé est au-dessus de la limite supérieure pour le premier ensemble de probabilités
+ERlow1 = low < dn1 ? 1 : 0    // Détermine si le prix bas est en dessous de la limite inférieure pour le premier ensemble de probabilités
+
+// Configuration de Trade à Probabilité Moyenne
+ERhigh2 = high > up1 and high > up2 ? 1 : 0  // Détermine si le prix élevé est au-dessus des limites supérieures pour les ensembles 1 et 2
+ERlow2 = low < dn1 and low < dn2 ? 1 : 0     // Détermine si le prix bas est en dessous des limites inférieures pour les ensembles 1 et 2
+
+// Configuration de Trade à Haute Probabilité
+ERhigh3 = high > up1 and high > up2 and high > up3 ? 1 : 0  // Détermine si le prix élevé est au-dessus des limites supérieures pour les ensembles 1, 2 et 3
+ERlow3 = low < dn1 and low < dn2 and low < dn3 ? 1 : 0     // Détermine si le prix bas est en dessous des limites inférieures pour les ensembles 1, 2 et 3
+
+// Tracés en fonction de la sélection
+HiPERh = hps and ERhigh3[1] != 1 and ERhigh3 ? 1 : 0  // Trace un point si la configuration de haute probabilité est activée et que les conditions de configuration de haute probabilité sont remplies
+HiPERl = hps and ERlow3[1] != 1 and ERlow3 ? 1 : 0    // Trace un point si la configuration de haute probabilité est activée et que les conditions de configuration de basse probabilité sont remplies
+
+MiPERh = mps and HiPERh == 0 and ERhigh2[1] != 1 and ERhigh2 ? 1 : 0  // Trace un point si la configuration de probabilité moyenne est activée et que les conditions de configuration de haute probabilité ne sont pas remplies et que les conditions de configuration de probabilité moyenne le sont
+MiPERl = mps and HiPERl == 0 and ERlow2[1] != 1 and ERlow2 ? 1 : 0    // Trace un point si la configuration de probabilité moyenne est activée et que les conditions de configuration de haute probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+
+LoPERh = lps and HiPERh == 0 and MiPERh == 0 and ERhigh1[1] != 1 and ERhigh1 ? 1 : na  // Trace un point si la configuration de basse probabilité est activée et que les conditions de configuration de haute et de moyenne probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+LoPERl = lps and HiPERl == 0 and MiPERl == 0 and ERlow1[1] != 1 and ERlow1 ? 1 : na  // Trace un point si la configuration de basse probabilité est activée et que les conditions de configuration de haute et de moyenne probabilité ne sont pas remplies et que les conditions de configuration de basse probabilité le sont
+
+// PLOT
+plotshape(HiPERh, style = shape.labeldown, location = location.abovebar, color = color.black , text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
+plotshape(HiPERl, style = shape.labelup, location = location.belowbar, color = color.black, text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
+plotshape(MiPERh, style = shape.labeldown, location = location.abovebar, color = color.black , text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
+plotshape(MiPERl, style = shape.labelup, location = location.belowbar, color = color.black, text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
+plotshape(LoPERh, style = shape.labeldown, location = location.abovebar, color = color.black , text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
+plotshape(LoPERl, style = shape.labelup, location = location.belowbar, color = color.black, text = "🐊extrême", textcolor = #ffffff, title = "🐊extrême")
