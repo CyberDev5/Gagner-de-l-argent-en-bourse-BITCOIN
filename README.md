@@ -1,5 +1,9 @@
 Comment ça fonctionne ?
 
+Stratégie n°4 :
+![stratégie](https://github.com/user-attachments/assets/8c4c2901-c554-4cf7-8ea3-e3ad2b2e9e84)
+
+
 Cet indicateur technique boursier est à utiliser sur la le ticker  BTC/USDT PERPETUAL FUTURE BINANCE sur la plateforme TRADINGVIEW.COM il vous faudra l'importer et l'ajouter sur votre écran pour permettre d'obtenir se visuel-ci : 
 ![image](https://github.com/CyberDev5/Gagner-de-l-argent-en-bourse-BITCOIN/assets/44006755/16cb4c3e-7c55-4812-b823-13c103055886)
 
@@ -34,6 +38,8 @@ le code dans mon repository
 Stratégie n°3 :
 
 ![image](https://github.com/user-attachments/assets/8c6a9390-d2ca-4eae-9895-a98f529de5f4)
+
+
 
 
 
